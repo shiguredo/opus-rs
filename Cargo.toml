@@ -1,0 +1,25 @@
+[package]
+name = "shiguredo_opus"
+version = "2026.0.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Shiguredo Inc."]
+license = "Apache-2.0"
+description = "Rust bindings for the Opus audio codec"
+homepage = "https://github.com/shiguredo/opus-rs"
+repository = "https://github.com/shiguredo/opus-rs"
+readme = "README.md"
+build = "build.rs"
+include = ["/src/**", "/build.rs", "/README.md", "/LICENSE"]
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.72.0"
+shiguredo_cmake = "4.3.0"
+shiguredo_toml = "2026.1.0"
+
+# 以降は外部ライブラリビルド用のメタデータ
+# (この内容は build.rs の中からのみ参照される)
+[package.metadata.external-dependencies]
+opus = { git = "https://github.com/xiph/opus.git", version = "v1.6.1" }

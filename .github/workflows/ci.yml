@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "develop"
+      - "feature/**"
+    paths-ignore:
+      - "**.md"
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  ci:
+    name: CI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+          - macos-26
+          - macos-15
+          - windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo test --workspace -- --test-threads=1
+
+      # シンボル書き換え確認: 全定義済みシンボルが shiguredo_opus_ プレフィックス付きであること
+      - name: Verify symbol rewriting
+        shell: bash
+        run: |
+          # cmake はビルド中間ディレクトリにも libopus.a を残すため、
+          # シンボル書き換え済みのインストール先 (out/lib/) のみを検索する
+          LIB_PATH=$(find target/debug/build -path '*/out/lib/libopus.a' -o -path '*/out/lib/opus.lib' | head -1)
+          if [ -z "$LIB_PATH" ]; then
+            echo "::error::static library not found"
+            exit 1
+          fi
+
+          SYSROOT=$(rustc --print sysroot)
+          TARGET=$(rustc -vV | sed -n 's/^host: //p')
+          LLVM_NM="$SYSROOT/lib/rustlib/$TARGET/bin/llvm-nm"
+          if [ ! -f "$LLVM_NM" ]; then
+            LLVM_NM="$SYSROOT/lib/rustlib/$TARGET/bin/llvm-nm.exe"
+          fi
+
+          # 定義済み外部シンボルのうち shiguredo_opus_ プレフィックスが付いていないものを検出する
+          # macOS では先頭 _ を除去して判定する
+          # --format=just-symbols はオブジェクトファイル名も出力するため、
+          # C 識別子のみをフィルタリングする（.c.o: などを除外）
+          VIOLATIONS=$("$LLVM_NM" --defined-only --extern-only --format=just-symbols "$LIB_PATH" \
+            | sed 's/^_//' \
+            | grep -E '^[a-zA-Z_][a-zA-Z0-9_]*$' \
+            | grep -v '^shiguredo_opus_' \
+            || true)
+
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::symbols without shiguredo_opus_ prefix found:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+          echo "All symbols correctly prefixed with shiguredo_opus_"
+
+  # docs.rs 向けビルド確認
+  docs-rs:
+    name: docs.rs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DOCS_RS: 1
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - run: cargo doc --no-deps
+
+  slack_notify:
+    needs:
+      - ci
+      - docs-rs
+    runs-on: ubuntu-slim
+    if: always()
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Slack Notification
+        uses: shiguredo/github-actions/.github/actions/slack-notify@main
+        with:
+          status: ${{ job.status }}
+          slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+          slack_channel: rust-oss
+          notify_mode: failure_and_fixed
+        env:
+          GH_TOKEN: ${{ github.token }}
