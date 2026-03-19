@@ -10,7 +10,10 @@ homepage = "https://github.com/shiguredo/opus-rs"
 repository = "https://github.com/shiguredo/opus-rs"
 readme = "README.md"
 build = "build.rs"
-include = ["/src/**", "/build.rs", "/README.md", "/LICENSE"]
+include = ["/src/**/*", "/build.rs", "/README.md", "/LICENSE"]
+
+[features]
+source-build = []
 
 [dependencies]
 

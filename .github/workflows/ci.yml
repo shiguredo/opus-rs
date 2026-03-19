@@ -6,8 +6,17 @@ on:
     branches:
       - "develop"
       - "feature/**"
+    tags-ignore:
+      - "**"
     paths-ignore:
       - "**.md"
+  schedule:
+    # JST 10:00 (UTC 01:00), 月-金
+    - cron: "0 1 * * 1-5"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   RUST_BACKTRACE: 1
@@ -16,7 +25,7 @@ jobs:
   ci:
     name: CI (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -31,9 +40,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: rustup update stable
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+        with:
+          os: ${{ matrix.os }}
+          toolchain: stable
       - run: cargo fmt --all --check
-      - run: cargo clippy --workspace -- -D warnings
-      - run: cargo test --workspace -- --test-threads=1
+      - run: cargo check --features source-build
+      - run: cargo clippy --features source-build -- -D warnings
+      - run: cargo test --features source-build -- --test-threads=1
 
       # シンボル書き換え確認: 全定義済みシンボルが shiguredo_opus_ プレフィックス付きであること
       - name: Verify symbol rewriting
@@ -48,10 +62,10 @@ jobs:
           fi
 
           SYSROOT=$(rustc --print sysroot)
-          TARGET=$(rustc -vV | sed -n 's/^host: //p')
-          LLVM_NM="$SYSROOT/lib/rustlib/$TARGET/bin/llvm-nm"
+          HOST=$(rustc -vV | sed -n 's/^host: //p')
+          LLVM_NM="$SYSROOT/lib/rustlib/$HOST/bin/llvm-nm"
           if [ ! -f "$LLVM_NM" ]; then
-            LLVM_NM="$SYSROOT/lib/rustlib/$TARGET/bin/llvm-nm.exe"
+            LLVM_NM="$SYSROOT/lib/rustlib/$HOST/bin/llvm-nm.exe"
           fi
 
           # 定義済み外部シンボルのうち shiguredo_opus_ プレフィックスが付いていないものを検出する

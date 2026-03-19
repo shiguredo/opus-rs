@@ -15,6 +15,8 @@
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
   - @voluntas
+- [ADD] prebuilt バイナリダウンロードに対応する
+  - @voluntas
 - [ADD] 静的ライブラリのシンボル名を `shiguredo_opus_` プレフィックス付きに書き換える機能を追加する
   - @voluntas
 - [ADD] `EncoderConfig` による詳細なエンコーダー設定に対応する
