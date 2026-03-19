@@ -141,20 +141,13 @@ fn download_prebuilt(out_dir: &Path) -> PathBuf {
     )
     .expect("failed to copy libopus.a");
 
-    // 静的ライブラリのシンボルを書き換える
+    // bindings.rs を OUT_DIR/ にコピーする
     //
-    // prebuilt バイナリも他のライブラリとシンボルが衝突しないよう、
-    // source-build と同じプレフィックスを付与する。
-    let callbacks = rewrite_symbols(&lib_dir, out_dir);
-
-    // bindings.rs を OUT_DIR/ にコピーし、#[link_name] 属性を挿入する
-    //
-    // prebuilt では bindgen を実行しないため、配布済みの bindings.rs を後処理して
-    // シンボル書き換え後の名前を #[link_name] 属性として挿入する。
+    // prebuilt の bindings.rs にはシンボル書き換え済みの #[link_name] 属性が
+    // すでに含まれているため、追加の処理は不要。
     let bindings_src = prebuilt_dir.join("bindings.rs");
     let bindings_dst = out_dir.join("bindings.rs");
     fs::copy(&bindings_src, &bindings_dst).expect("failed to copy bindings.rs");
-    inject_link_name_into_bindings(&bindings_dst, &callbacks.rename_map);
 
     lib_dir
 }
@@ -611,47 +604,6 @@ fn rewrite_archive_symbols(objcopy_path: &Path, lib_path: &Path, map_file: &Path
     if !status.success() {
         panic!("llvm-objcopy failed");
     }
-}
-
-/// prebuilt の bindings.rs に #[link_name] 属性を挿入する
-///
-/// prebuilt パスでは bindgen を実行しないため、配布済みの bindings.rs を後処理して
-/// シンボル書き換え後の名前を `#[link_name = "\u{1}<シンボル名>"]` として挿入する。
-///
-/// 処理対象は `pub fn <name>(` パターンにマッチする行。
-/// bindgen_map にエントリがある関数に対してのみ #[link_name] を挿入する。
-///
-/// \u{1} プレフィックスはコンパイラにシンボル名をそのまま使うよう指示するもので、
-/// bindgen が generated_link_name_override で生成するのと同じ形式。
-fn inject_link_name_into_bindings(bindings_path: &Path, bindgen_map: &HashMap<String, String>) {
-    let content = fs::read_to_string(bindings_path).expect("failed to read bindings.rs");
-    let mut output = Vec::new();
-
-    for line in content.lines() {
-        // `    pub fn opus_encode(` のようなパターンを検出する
-        if let Some(fn_name) = extract_extern_fn_name(line)
-            && let Some(new_symbol) = bindgen_map.get(fn_name)
-        {
-            // #[link_name] 属性を挿入する
-            // インデントは元の行に合わせる
-            let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
-            output.push(format!("{indent}#[link_name = \"\\u{{1}}{new_symbol}\"]"));
-        }
-        output.push(line.to_string());
-    }
-
-    fs::write(bindings_path, output.join("\n")).expect("failed to write bindings.rs");
-}
-
-/// `pub fn <name>(` パターンから関数名を抽出する
-///
-/// bindgen が生成する extern ブロック内の関数宣言を検出するためのヘルパー。
-/// 戻り値は関数名 (例: "opus_encode")。マッチしない場合は None。
-fn extract_extern_fn_name(line: &str) -> Option<&str> {
-    let trimmed = line.trim_start();
-    let rest = trimmed.strip_prefix("pub fn ")?;
-    let end = rest.find('(')?;
-    Some(&rest[..end])
 }
 
 // --- プラットフォーム判定 ---
