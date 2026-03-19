@@ -5,11 +5,41 @@ on:
     tags:
       - "*"
 
+env:
+  RUST_BACKTRACE: 1
+
 jobs:
+  ci:
+    name: CI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - ubuntu-22.04
+          - ubuntu-22.04-arm
+          - macos-26
+          - macos-15
+          - windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable
+      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
+        with:
+          os: ${{ matrix.os }}
+          toolchain: stable
+      - run: cargo fmt --all --check
+      - run: cargo check --features source-build
+      - run: cargo clippy --features source-build -- -D warnings
+      - run: cargo test --features source-build -- --test-threads=1
+
   github-release:
     name: "Create GitHub Release"
-    timeout-minutes: 20
-    runs-on: macos-26
+    needs: [ci]
+    runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
     steps:
@@ -35,8 +65,65 @@ jobs:
               --notes "Release ${{ steps.get_version.outputs.VERSION }}"
           fi
 
-  publish:
+  build-prebuilt:
+    name: "Build prebuilt (${{ matrix.target }})"
     needs: github-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ubuntu-24.04_x86_64
+            os: ubuntu-24.04
+          - target: ubuntu-24.04_armv8
+            os: ubuntu-24.04-arm
+          - target: ubuntu-22.04_x86_64
+            os: ubuntu-22.04
+          - target: ubuntu-22.04_armv8
+            os: ubuntu-22.04-arm
+          - target: macos_arm64
+            os: macos-15
+          - target: windows_x86_64
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Build with source-build
+        run: cargo build --release --features source-build
+
+      - name: Create prebuilt archive
+        shell: bash
+        run: |
+          OUT_DIR=$(find target/release/build/shiguredo_opus-*/out -maxdepth 0 -type d 2>/dev/null | head -1)
+          mkdir -p staging/lib
+          cp "${OUT_DIR}/lib/libopus.a" staging/lib/ 2>/dev/null || cp "${OUT_DIR}/lib/opus.lib" staging/lib/ 2>/dev/null
+          cp "${OUT_DIR}/bindings.rs" staging/
+          tar czf libopus-${{ matrix.target }}.tar.gz -C staging .
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          if command -v sha256sum &> /dev/null; then
+            sha256sum libopus-${{ matrix.target }}.tar.gz > libopus-${{ matrix.target }}.tar.gz.sha256
+          else
+            shasum -a 256 libopus-${{ matrix.target }}.tar.gz > libopus-${{ matrix.target }}.tar.gz.sha256
+          fi
+
+      - name: Upload prebuilt archive
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.github-release.outputs.version }} \
+            libopus-${{ matrix.target }}.tar.gz \
+            libopus-${{ matrix.target }}.tar.gz.sha256 \
+            --clobber
+
+  publish:
+    needs: [github-release, build-prebuilt]
     timeout-minutes: 10
     runs-on: macos-26
     environment: release
@@ -51,7 +138,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   slack_notify:
-    needs: [github-release, publish]
+    needs: [ci, github-release, build-prebuilt, publish]
     timeout-minutes: 5
     runs-on: ubuntu-slim
     if: ${{ always() }}
