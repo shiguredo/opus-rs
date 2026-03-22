@@ -455,6 +455,16 @@ pub struct EncoderConfig {
     /// 通常のステレオ品質はわずかに低下する。
     /// 未指定時は Opus のデフォルト値（位相反転有効）が使用される。
     pub phase_inversion_disabled: Option<bool>,
+
+    /// DRED (Deep Redundancy) の最大フレーム数 (10ms 単位)
+    ///
+    /// 0 で DRED 無効（デフォルト）。正の値で DRED を有効にし、
+    /// 最大で指定フレーム数分の冗長データをパケットに含める。
+    /// 未指定時は Opus のデフォルト値（DRED 無効）が使用される。
+    ///
+    /// `dred` feature が必要。
+    #[cfg(feature = "dred")]
+    pub dred_duration: Option<u32>,
 }
 
 impl EncoderConfig {
@@ -481,6 +491,8 @@ impl EncoderConfig {
             lsb_depth: None,
             prediction_disabled: None,
             phase_inversion_disabled: None,
+            #[cfg(feature = "dred")]
+            dred_duration: None,
         }
     }
 }
@@ -773,6 +785,19 @@ impl Encoder {
             }
         }
 
+        // DRED 設定
+        #[cfg(feature = "dred")]
+        if let Some(dred_duration) = config.dred_duration {
+            unsafe {
+                set_encoder_ctl(
+                    inner,
+                    sys::OPUS_SET_DRED_DURATION_REQUEST,
+                    dred_duration as c_int,
+                    "opus_encoder_ctl(OPUS_SET_DRED_DURATION)",
+                )?;
+            }
+        }
+
         // エンコード結果の一時バッファサイズ
         //
         // Opus の推奨最大パケットサイズは 4000 バイト（RFC 6716）。
@@ -908,6 +933,25 @@ impl Encoder {
             Error::check(code, "opus_encoder_ctl(OPUS_GET_DTX)")?;
         }
         Ok(value != 0)
+    }
+
+    /// DRED の最大フレーム数を取得する (10ms 単位)
+    ///
+    /// 0 の場合は DRED 無効。
+    ///
+    /// `dred` feature が必要。
+    #[cfg(feature = "dred")]
+    pub fn get_dred_duration(&self) -> Result<u32, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_encoder_ctl(
+                self.inner,
+                sys::OPUS_GET_DRED_DURATION_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_DRED_DURATION)")?;
+        }
+        Ok(value as u32)
     }
 
     /// サンプルレートを取得する (Hz)
@@ -1368,6 +1412,79 @@ impl Decoder {
         Ok(buf)
     }
 
+    /// DRED からオーディオを i16 PCM にデコードする
+    ///
+    /// `dred_offset` はデコード開始位置（パケットの実データの先頭からのサンプル数）。
+    ///
+    /// `dred` feature が必要。
+    #[cfg(feature = "dred")]
+    pub fn dred_decode(&mut self, dred: &Dred, dred_offset: i32) -> Result<Vec<i16>, Error> {
+        let buf_size = self.frame_samples * self.channels as usize;
+        self.decode_buf.resize(buf_size, 0);
+
+        let decoded_samples = unsafe {
+            sys::opus_decoder_dred_decode(
+                self.inner,
+                dred.inner,
+                dred_offset,
+                self.decode_buf.as_mut_ptr(),
+                self.frame_samples as c_int,
+            )
+        };
+        Error::check(decoded_samples, "opus_decoder_dred_decode")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        Ok(self.decode_buf[..actual_size].to_vec())
+    }
+
+    /// DRED からオーディオを f32 PCM にデコードする
+    ///
+    /// `dred` feature が必要。
+    #[cfg(feature = "dred")]
+    pub fn dred_decode_f32(&mut self, dred: &Dred, dred_offset: i32) -> Result<Vec<f32>, Error> {
+        let buf_size = self.frame_samples * self.channels as usize;
+        let mut buf = vec![0.0f32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decoder_dred_decode_float(
+                self.inner,
+                dred.inner,
+                dred_offset,
+                buf.as_mut_ptr(),
+                self.frame_samples as c_int,
+            )
+        };
+        Error::check(decoded_samples, "opus_decoder_dred_decode_float")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
+    }
+
+    /// DRED からオーディオを 24bit PCM (i32) にデコードする
+    ///
+    /// `dred` feature が必要。
+    #[cfg(feature = "dred")]
+    pub fn dred_decode_i24(&mut self, dred: &Dred, dred_offset: i32) -> Result<Vec<i32>, Error> {
+        let buf_size = self.frame_samples * self.channels as usize;
+        let mut buf = vec![0i32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decoder_dred_decode24(
+                self.inner,
+                dred.inner,
+                dred_offset,
+                buf.as_mut_ptr(),
+                self.frame_samples as c_int,
+            )
+        };
+        Error::check(decoded_samples, "opus_decoder_dred_decode24")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
+    }
+
     /// i16 デコード処理の内部実装
     fn decode_i16_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i16>, Error> {
         let nb_samples = self.get_nb_samples(encoded)?;
@@ -1461,6 +1578,123 @@ impl Drop for Decoder {
 // Opus デコーダー自体はスレッドセーフではないが、
 // Decoder は &mut self を要求するため、同時アクセスは Rust の型システムで防がれる。
 unsafe impl Send for Decoder {}
+
+// --- DRED (Deep Redundancy) ---
+
+/// DRED デコーダー
+///
+/// `dred` feature が必要。
+#[cfg(feature = "dred")]
+///
+/// DRED パケットのパースと処理を行う。
+/// [`Dred`] と組み合わせて使用し、パース結果を [`Decoder::dred_decode`] で
+/// オーディオにデコードする。
+#[derive(Debug)]
+pub struct DredDecoder {
+    inner: *mut sys::OpusDREDDecoder,
+}
+
+#[cfg(feature = "dred")]
+impl DredDecoder {
+    /// DRED デコーダーを作成する
+    pub fn new() -> Result<Self, Error> {
+        let mut error: c_int = 0;
+        let inner = unsafe { sys::opus_dred_decoder_create(&mut error) };
+        Error::check(error, "opus_dred_decoder_create")?;
+        Ok(Self { inner })
+    }
+
+    /// DRED パケットをパースする
+    ///
+    /// エンコーダーが DRED 付きで生成したパケットから DRED データを抽出する。
+    ///
+    /// - `dred`: パース結果を格納する DRED 状態
+    /// - `data`: エンコードされたパケット全体
+    /// - `max_dred_samples`: 必要な最大 DRED サンプル数
+    /// - `sample_rate`: サンプルレート (Hz)
+    ///
+    /// 戻り値は最初の DRED サンプルのオフセット（正の値）。
+    /// DRED が含まれない場合は 0 を返す。
+    pub fn parse(
+        &mut self,
+        dred: &mut Dred,
+        data: &[u8],
+        max_dred_samples: i32,
+        sample_rate: i32,
+    ) -> Result<i32, Error> {
+        let mut dred_end: c_int = 0;
+        let result = unsafe {
+            sys::opus_dred_parse(
+                self.inner,
+                dred.inner,
+                data.as_ptr(),
+                data.len() as i32,
+                max_dred_samples,
+                sample_rate,
+                &mut dred_end,
+                0,
+            )
+        };
+        Error::check(result, "opus_dred_parse")?;
+        Ok(result)
+    }
+
+    /// 遅延処理を完了する
+    ///
+    /// [`DredDecoder::parse`] を `defer_processing=1` で呼んだ場合に使用する。
+    /// `src` と `dst` は同じ [`Dred`] インスタンスでもよい。
+    pub fn process(&mut self, src: &Dred, dst: &mut Dred) -> Result<(), Error> {
+        let code = unsafe { sys::opus_dred_process(self.inner, src.inner, dst.inner) };
+        Error::check(code, "opus_dred_process")
+    }
+}
+
+#[cfg(feature = "dred")]
+impl Drop for DredDecoder {
+    fn drop(&mut self) {
+        unsafe {
+            sys::opus_dred_decoder_destroy(self.inner);
+        }
+    }
+}
+
+#[cfg(feature = "dred")]
+unsafe impl Send for DredDecoder {}
+
+/// DRED 状態
+///
+/// `dred` feature が必要。
+#[cfg(feature = "dred")]
+///
+/// DRED パケットのパース結果を保持する。
+/// [`DredDecoder::parse`] で書き込み、[`Decoder::dred_decode`] で読み出す。
+#[derive(Debug)]
+pub struct Dred {
+    inner: *mut sys::OpusDRED,
+}
+
+#[cfg(feature = "dred")]
+impl Dred {
+    /// DRED 状態を作成する
+    pub fn new() -> Result<Self, Error> {
+        let mut error: c_int = 0;
+        let inner = unsafe { sys::opus_dred_alloc(&mut error) };
+        Error::check(error, "opus_dred_alloc")?;
+        Ok(Self { inner })
+    }
+}
+
+#[cfg(feature = "dred")]
+impl Drop for Dred {
+    fn drop(&mut self) {
+        unsafe {
+            sys::opus_dred_free(self.inner);
+        }
+    }
+}
+
+#[cfg(feature = "dred")]
+unsafe impl Send for Dred {}
 
 #[cfg(test)]
 mod tests {
@@ -1593,6 +1827,8 @@ mod tests {
             lsb_depth: Some(16),
             prediction_disabled: Some(false),
             phase_inversion_disabled: Some(false),
+            #[cfg(feature = "dred")]
+            dred_duration: Some(5),
         };
         assert!(Encoder::new(config).is_ok());
     }
@@ -2496,5 +2732,62 @@ mod tests {
         // ピッチは 0 以上 (利用不可の場合は 0)
         let pitch = decoder.get_pitch().unwrap();
         assert!(pitch >= 0, "unexpected pitch: {pitch}");
+    }
+
+    // --- DRED テスト ---
+
+    #[cfg(feature = "dred")]
+    #[test]
+    fn dred_roundtrip() {
+        // DRED 有効でエンコードし、DRED をパース→デコードするラウンドトリップ
+        let enc_config = EncoderConfig {
+            dred_duration: Some(10),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(enc_config).unwrap();
+        assert_eq!(encoder.get_dred_duration().unwrap(), 10);
+
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut dred_decoder = DredDecoder::new().unwrap();
+        let mut dred = Dred::new().unwrap();
+
+        let input = sine_wave_i16();
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..10 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        // DRED 付きパケットをエンコードする
+        let encoded = encoder.encode(&input).unwrap();
+
+        // DRED をパースする
+        let offset = dred_decoder
+            .parse(&mut dred, &encoded, 48000, 48000)
+            .unwrap();
+
+        // DRED が含まれていればデコードする
+        if offset > 0 {
+            let decoded = decoder.dred_decode(&dred, offset).unwrap();
+            assert!(!decoded.is_empty());
+        }
+    }
+
+    #[cfg(feature = "dred")]
+    #[test]
+    fn dred_disabled_parse() {
+        // DRED 無効のパケットをパースしても 0 が返る (エラーにならない)
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut dred_decoder = DredDecoder::new().unwrap();
+        let mut dred = Dred::new().unwrap();
+
+        let input = sine_wave_i16();
+        let encoded = encoder.encode(&input).unwrap();
+
+        let offset = dred_decoder
+            .parse(&mut dred, &encoded, 48000, 48000)
+            .unwrap();
+        assert_eq!(offset, 0, "DRED should not be present in non-DRED packet");
     }
 }

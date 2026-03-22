@@ -43,7 +43,29 @@ WebRTC のパケットロス対策として実用的であり、
 
 - `EncoderConfig::dred_duration` - DRED の最大フレーム数を設定する (10ms 単位)
 
+### feature フラグ
+
+- `dred` feature で有効化する (`source-build` を暗黙的に要求)
+
 ### テスト
 
 - DRED エンコード→パース→デコードのラウンドトリップテスト (サイン波)
 - DRED が無効な場合のパーステスト
+
+## pending にした理由
+
+Rust バインディング側の実装は完了しているが、opus ライブラリのビルドに問題がある。
+
+DRED は DNN (Deep Neural Network) コンポーネントを必要とし、
+cmake の `OPUS_DRED=ON` オプションで有効にする。しかし、DNN の学習済みデータヘッダー
+(`dnn/fargan_data.h` 等) は `autogen.sh` や専用スクリプトで生成する必要があり、
+git clone + cmake だけではビルドできない。
+
+opus v1.6.1 のリリースソースアーカイブ (tar.gz) にはこれらのファイルが含まれるが、
+現在の build.rs は git clone でソースを取得しているため、生成済みファイルが存在しない。
+
+### 解決に必要な対応
+
+- ソース取得方法をリリースアーカイブに変更する、または
+- `autogen.sh` をビルドプロセスに組み込む、または
+- 生成済みデータファイルを別途取得する仕組みを用意する

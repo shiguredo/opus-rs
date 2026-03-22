@@ -237,12 +237,19 @@ fn build_from_source(out_dir: &Path, output_bindings_path: &Path) -> PathBuf {
     shiguredo_cmake::set_cmake_env();
     // profile("Release") を使用: Windows の Visual Studio ジェネレーター (マルチ構成) では
     // CMAKE_BUILD_TYPE が無視されるため、cmake crate の profile() で統一的に指定する
-    let dst = shiguredo_cmake::Config::new(&src_dir)
+    let mut cmake_config = shiguredo_cmake::Config::new(&src_dir);
+    cmake_config
         .profile("Release")
         .define("BUILD_SHARED_LIBS", "OFF")
         .define("OPUS_BUILD_TESTING", "OFF")
-        .define("OPUS_BUILD_PROGRAMS", "OFF")
-        .build();
+        .define("OPUS_BUILD_PROGRAMS", "OFF");
+
+    // dred feature が有効な場合は DRED (Deep Redundancy) を有効にする
+    if std::env::var("CARGO_FEATURE_DRED").is_ok() {
+        cmake_config.define("OPUS_DRED", "ON");
+    }
+
+    let dst = cmake_config.build();
 
     let output_lib_dir = dst.join("lib/");
 
