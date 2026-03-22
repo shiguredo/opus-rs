@@ -737,13 +737,7 @@ impl Encoder {
     /// インターリーブ形式の i16 PCM データを受け取り、Opus フォーマットに圧縮する。
     /// `pcm` の長さは `frame_samples * channels` と一致する必要がある。
     pub fn encode(&mut self, pcm: &[i16]) -> Result<Vec<u8>, Error> {
-        let expected = self.frame_samples * self.channels as usize;
-        if pcm.len() != expected {
-            return Err(Error {
-                code: sys::OPUS_BAD_ARG,
-                function: "Encoder::encode(pcm length mismatch)",
-            });
-        }
+        self.check_pcm_length(pcm.len(), "Encoder::encode")?;
 
         let size = unsafe {
             sys::opus_encode(
@@ -757,6 +751,63 @@ impl Encoder {
         Error::check(size, "opus_encode")?;
 
         Ok(self.encode_buf[..size as usize].to_vec())
+    }
+
+    /// 1 フレーム分の f32 PCM 音声データをエンコードする
+    ///
+    /// インターリーブ形式の f32 PCM データを受け取り、Opus フォーマットに圧縮する。
+    /// 入力の範囲は +/-1.0 が標準。この範囲を超えるサンプルもサポートされるが、
+    /// i16 API でデコードする場合にクリップされる。
+    /// `pcm` の長さは `frame_samples * channels` と一致する必要がある。
+    pub fn encode_f32(&mut self, pcm: &[f32]) -> Result<Vec<u8>, Error> {
+        self.check_pcm_length(pcm.len(), "Encoder::encode_f32")?;
+
+        let size = unsafe {
+            sys::opus_encode_float(
+                self.inner,
+                pcm.as_ptr(),
+                self.frame_samples as c_int,
+                self.encode_buf.as_mut_ptr(),
+                self.encode_buf.len() as c_int,
+            )
+        };
+        Error::check(size, "opus_encode_float")?;
+
+        Ok(self.encode_buf[..size as usize].to_vec())
+    }
+
+    /// 1 フレーム分の 24bit PCM 音声データをエンコードする
+    ///
+    /// インターリーブ形式の i32 PCM データ (下位 24bit を使用) を受け取り、
+    /// Opus フォーマットに圧縮する。
+    /// `pcm` の長さは `frame_samples * channels` と一致する必要がある。
+    pub fn encode_i24(&mut self, pcm: &[i32]) -> Result<Vec<u8>, Error> {
+        self.check_pcm_length(pcm.len(), "Encoder::encode_i24")?;
+
+        let size = unsafe {
+            sys::opus_encode24(
+                self.inner,
+                pcm.as_ptr(),
+                self.frame_samples as c_int,
+                self.encode_buf.as_mut_ptr(),
+                self.encode_buf.len() as c_int,
+            )
+        };
+        Error::check(size, "opus_encode24")?;
+
+        Ok(self.encode_buf[..size as usize].to_vec())
+    }
+
+    /// PCM データの長さを検証する
+    fn check_pcm_length(&self, len: usize, function: &'static str) -> Result<(), Error> {
+        let expected = self.frame_samples * self.channels as usize;
+        if len != expected {
+            return Err(Error {
+                code: sys::OPUS_BAD_ARG,
+                function,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -947,7 +998,7 @@ impl Decoder {
     ///
     /// 返される `Vec<i16>` はインターリーブ形式の PCM データ。
     pub fn decode(&mut self, encoded: &[u8]) -> Result<Vec<i16>, Error> {
-        self.decode_internal(encoded, 0)
+        self.decode_i16_internal(encoded, 0)
     }
 
     /// FEC (前方誤り訂正) を使って失われたパケットを復元する
@@ -962,7 +1013,7 @@ impl Decoder {
     /// 2. `decode_fec(packet_n_plus_1)` で失われたフレームを復元する
     /// 3. `decode(packet_n_plus_1)` で通常のデコードを行う
     pub fn decode_fec(&mut self, encoded: &[u8]) -> Result<Vec<i16>, Error> {
-        self.decode_internal(encoded, 1)
+        self.decode_i16_internal(encoded, 1)
     }
 
     /// パケットロス時に補間フレームを生成する (PLC: Packet Loss Concealment)
@@ -971,8 +1022,7 @@ impl Decoder {
     /// デコーダーの内部状態に基づいて補間フレームを生成する。
     /// フレームサイズは [`DecoderConfig::frame_duration`] で設定した値が使用される。
     pub fn decode_plc(&mut self) -> Result<Vec<i16>, Error> {
-        let frame_samples = self.frame_samples;
-        let buf_size = frame_samples * self.channels as usize;
+        let buf_size = self.frame_samples * self.channels as usize;
         self.decode_buf.resize(buf_size, 0);
 
         let decoded_samples = unsafe {
@@ -981,7 +1031,7 @@ impl Decoder {
                 std::ptr::null(),
                 0,
                 self.decode_buf.as_mut_ptr(),
-                frame_samples as c_int,
+                self.frame_samples as c_int,
                 0,
             )
         };
@@ -991,8 +1041,86 @@ impl Decoder {
         Ok(self.decode_buf[..actual_size].to_vec())
     }
 
-    /// デコード処理の内部実装
-    fn decode_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i16>, Error> {
+    /// 1 パケット分の圧縮データを f32 PCM にデコードする
+    ///
+    /// 返される `Vec<f32>` はインターリーブ形式の PCM データ。
+    /// 出力の範囲は通常 +/-1.0。
+    pub fn decode_f32(&mut self, encoded: &[u8]) -> Result<Vec<f32>, Error> {
+        self.decode_f32_internal(encoded, 0)
+    }
+
+    /// FEC (前方誤り訂正) を使って失われたパケットを f32 PCM として復元する
+    ///
+    /// 動作は [`Decoder::decode_fec`] と同様。出力が f32 になる。
+    pub fn decode_fec_f32(&mut self, encoded: &[u8]) -> Result<Vec<f32>, Error> {
+        self.decode_f32_internal(encoded, 1)
+    }
+
+    /// パケットロス時に f32 PCM の補間フレームを生成する (PLC)
+    ///
+    /// 動作は [`Decoder::decode_plc`] と同様。出力が f32 になる。
+    pub fn decode_plc_f32(&mut self) -> Result<Vec<f32>, Error> {
+        let buf_size = self.frame_samples * self.channels as usize;
+        let mut buf = vec![0.0f32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decode_float(
+                self.inner,
+                std::ptr::null(),
+                0,
+                buf.as_mut_ptr(),
+                self.frame_samples as c_int,
+                0,
+            )
+        };
+        Error::check(decoded_samples, "opus_decode_float(PLC)")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
+    }
+
+    /// 1 パケット分の圧縮データを 24bit PCM (i32) にデコードする
+    ///
+    /// 返される `Vec<i32>` はインターリーブ形式の PCM データ。
+    /// i32 の下位 24bit に有効なサンプル値が格納される。
+    pub fn decode_i24(&mut self, encoded: &[u8]) -> Result<Vec<i32>, Error> {
+        self.decode_i24_internal(encoded, 0)
+    }
+
+    /// FEC (前方誤り訂正) を使って失われたパケットを 24bit PCM (i32) として復元する
+    ///
+    /// 動作は [`Decoder::decode_fec`] と同様。出力が i32 (24bit) になる。
+    pub fn decode_fec_i24(&mut self, encoded: &[u8]) -> Result<Vec<i32>, Error> {
+        self.decode_i24_internal(encoded, 1)
+    }
+
+    /// パケットロス時に 24bit PCM (i32) の補間フレームを生成する (PLC)
+    ///
+    /// 動作は [`Decoder::decode_plc`] と同様。出力が i32 (24bit) になる。
+    pub fn decode_plc_i24(&mut self) -> Result<Vec<i32>, Error> {
+        let buf_size = self.frame_samples * self.channels as usize;
+        let mut buf = vec![0i32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decode24(
+                self.inner,
+                std::ptr::null(),
+                0,
+                buf.as_mut_ptr(),
+                self.frame_samples as c_int,
+                0,
+            )
+        };
+        Error::check(decoded_samples, "opus_decode24(PLC)")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
+    }
+
+    /// i16 デコード処理の内部実装
+    fn decode_i16_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i16>, Error> {
         let nb_samples = self.get_nb_samples(encoded)?;
         let buf_size = nb_samples * self.channels as usize;
         self.decode_buf.resize(buf_size, 0);
@@ -1011,6 +1139,52 @@ impl Decoder {
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         Ok(self.decode_buf[..actual_size].to_vec())
+    }
+
+    /// f32 デコード処理の内部実装
+    fn decode_f32_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<f32>, Error> {
+        let nb_samples = self.get_nb_samples(encoded)?;
+        let buf_size = nb_samples * self.channels as usize;
+        let mut buf = vec![0.0f32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decode_float(
+                self.inner,
+                encoded.as_ptr(),
+                encoded.len() as c_int,
+                buf.as_mut_ptr(),
+                nb_samples as c_int,
+                fec,
+            )
+        };
+        Error::check(decoded_samples, "opus_decode_float")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
+    }
+
+    /// i24 デコード処理の内部実装
+    fn decode_i24_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i32>, Error> {
+        let nb_samples = self.get_nb_samples(encoded)?;
+        let buf_size = nb_samples * self.channels as usize;
+        let mut buf = vec![0i32; buf_size];
+
+        let decoded_samples = unsafe {
+            sys::opus_decode24(
+                self.inner,
+                encoded.as_ptr(),
+                encoded.len() as c_int,
+                buf.as_mut_ptr(),
+                nb_samples as c_int,
+                fec,
+            )
+        };
+        Error::check(decoded_samples, "opus_decode24")?;
+
+        let actual_size = decoded_samples as usize * self.channels as usize;
+        buf.truncate(actual_size);
+        Ok(buf)
     }
 
     /// パケットに含まれるサンプル数を取得する
@@ -1045,6 +1219,10 @@ mod tests {
 
     const TEST_SAMPLE_RATE: u32 = 48000;
     const TEST_CHANNELS: u8 = 2;
+    /// 48kHz, 20ms フレームのチャンネルあたりサンプル数
+    const FRAME_SAMPLES: usize = 960;
+    /// 1 フレームの総サンプル数 (ステレオ)
+    const FRAME_SIZE: usize = FRAME_SAMPLES * TEST_CHANNELS as usize;
 
     fn encoder_config(bitrate: Option<u32>) -> EncoderConfig {
         EncoderConfig {
@@ -1053,12 +1231,76 @@ mod tests {
         }
     }
 
+    fn decoder_config() -> DecoderConfig {
+        DecoderConfig::new(TEST_SAMPLE_RATE, TEST_CHANNELS)
+    }
+
+    /// 440Hz サイン波のステレオ i16 PCM データを 1 フレーム分生成する
+    fn sine_wave_i16() -> Vec<i16> {
+        let mut pcm = vec![0i16; FRAME_SIZE];
+        for i in 0..FRAME_SAMPLES {
+            let t = i as f64 / TEST_SAMPLE_RATE as f64;
+            let sample = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
+            let value = (sample * i16::MAX as f64) as i16;
+            // ステレオ: 両チャンネルに同じ値
+            pcm[i * 2] = value;
+            pcm[i * 2 + 1] = value;
+        }
+        pcm
+    }
+
+    /// 440Hz サイン波のステレオ f32 PCM データを 1 フレーム分生成する
+    fn sine_wave_f32() -> Vec<f32> {
+        let mut pcm = vec![0.0f32; FRAME_SIZE];
+        for i in 0..FRAME_SAMPLES {
+            let t = i as f64 / TEST_SAMPLE_RATE as f64;
+            let sample = (2.0 * std::f64::consts::PI * 440.0 * t).sin() as f32;
+            pcm[i * 2] = sample;
+            pcm[i * 2 + 1] = sample;
+        }
+        pcm
+    }
+
+    /// 440Hz サイン波のステレオ i24 (i32) PCM データを 1 フレーム分生成する
+    fn sine_wave_i24() -> Vec<i32> {
+        let max_24bit = 0x7F_FFFF_i32;
+        let mut pcm = vec![0i32; FRAME_SIZE];
+        for i in 0..FRAME_SAMPLES {
+            let t = i as f64 / TEST_SAMPLE_RATE as f64;
+            let sample = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
+            let value = (sample * max_24bit as f64) as i32;
+            pcm[i * 2] = value;
+            pcm[i * 2 + 1] = value;
+        }
+        pcm
+    }
+
+    /// i16 PCM の二乗平均平方根 (RMS) を計算する
+    fn rms_i16(pcm: &[i16]) -> f64 {
+        let sum: f64 = pcm.iter().map(|&s| (s as f64) * (s as f64)).sum();
+        (sum / pcm.len() as f64).sqrt()
+    }
+
+    /// f32 PCM の二乗平均平方根 (RMS) を計算する
+    fn rms_f32(pcm: &[f32]) -> f64 {
+        let sum: f64 = pcm.iter().map(|&s| (s as f64) * (s as f64)).sum();
+        (sum / pcm.len() as f64).sqrt()
+    }
+
+    /// i32 PCM の二乗平均平方根 (RMS) を計算する
+    fn rms_i32(pcm: &[i32]) -> f64 {
+        let sum: f64 = pcm.iter().map(|&s| (s as f64) * (s as f64)).sum();
+        (sum / pcm.len() as f64).sqrt()
+    }
+
+    // --- エンコーダー初期化テスト ---
+
     #[test]
     fn init_encoder() {
         // ビットレート指定あり
         assert!(Encoder::new(encoder_config(Some(64_000))).is_ok());
 
-        // ビットレート指定なし（Opus デフォルト）
+        // ビットレート指定なし (Opus デフォルト)
         assert!(Encoder::new(encoder_config(None)).is_ok());
 
         // 無効なビットレート
@@ -1083,7 +1325,6 @@ mod tests {
 
     #[test]
     fn init_encoder_with_options() {
-        // 全オプション指定
         let config = EncoderConfig {
             sample_rate: TEST_SAMPLE_RATE,
             channels: TEST_CHANNELS,
@@ -1109,7 +1350,6 @@ mod tests {
 
     #[test]
     fn init_encoder_cbr() {
-        // CBR モード
         let config = EncoderConfig {
             vbr: Some(false),
             ..encoder_config(Some(64_000))
@@ -1128,14 +1368,12 @@ mod tests {
 
     #[test]
     fn init_encoder_bandwidth() {
-        // 帯域幅強制指定
         let config = EncoderConfig {
             bandwidth: Some(Bandwidth::Wideband),
             ..encoder_config(Some(64_000))
         };
         assert!(Encoder::new(config).is_ok());
 
-        // 最大帯域幅指定
         let config = EncoderConfig {
             max_bandwidth: Some(Bandwidth::Narrowband),
             ..encoder_config(Some(64_000))
@@ -1163,67 +1401,26 @@ mod tests {
         assert!(Encoder::new(config).is_ok());
     }
 
+    // --- デコーダー初期化テスト ---
+
     #[test]
     fn init_decoder() {
-        // OK
-        assert!(
-            Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 2,
-                frame_duration: None,
-                gain: None,
-            })
-            .is_ok()
-        );
-        assert!(
-            Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 1,
-                frame_duration: None,
-                gain: None,
-            })
-            .is_ok()
-        );
+        assert!(Decoder::new(DecoderConfig::new(TEST_SAMPLE_RATE, 2)).is_ok());
+        assert!(Decoder::new(DecoderConfig::new(TEST_SAMPLE_RATE, 1)).is_ok());
 
-        // NG
-        assert!(
-            Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 20,
-                frame_duration: None,
-                gain: None,
-            })
-            .is_err()
-        );
-        assert!(
-            Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 0,
-                frame_duration: None,
-                gain: None,
-            })
-            .is_err()
-        );
-        assert!(
-            Decoder::new(DecoderConfig {
-                sample_rate: 0,
-                channels: 2,
-                frame_duration: None,
-                gain: None,
-            })
-            .is_err()
-        );
+        // 無効なパラメーター
+        assert!(Decoder::new(DecoderConfig::new(TEST_SAMPLE_RATE, 20)).is_err());
+        assert!(Decoder::new(DecoderConfig::new(TEST_SAMPLE_RATE, 0)).is_err());
+        assert!(Decoder::new(DecoderConfig::new(0, 2)).is_err());
     }
 
     #[test]
     fn init_decoder_with_gain() {
-        // ゲイン調整あり
+        // ゲイン調整あり (+1 dB)
         assert!(
             Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 2,
-                frame_duration: None,
-                gain: Some(256), // +1 dB
+                gain: Some(256),
+                ..decoder_config()
             })
             .is_ok()
         );
@@ -1231,163 +1428,370 @@ mod tests {
         // 範囲外のゲイン
         assert!(
             Decoder::new(DecoderConfig {
-                sample_rate: TEST_SAMPLE_RATE,
-                channels: 2,
-                frame_duration: None,
                 gain: Some(40000),
+                ..decoder_config()
             })
             .is_err()
         );
     }
 
-    #[test]
-    fn encode_silent() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
-
-        // 960 サンプル × 2ch の無音フレームをエンコードする
-        let encoded = encoder
-            .encode(&[0; 960 * TEST_CHANNELS as usize])
-            .expect("encode error");
-        assert!(!encoded.is_empty());
-    }
+    // --- i16 エンコード/デコードテスト ---
 
     #[test]
     fn encode_pcm_length_mismatch() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
-
-        // フレームサイズと一致しない PCM データはエラーになる
-        assert!(encoder.encode(&[0; 100]).is_err());
-    }
-
-    #[test]
-    fn decode_silent() {
-        let mut decoder = Decoder::new(DecoderConfig {
-            sample_rate: TEST_SAMPLE_RATE,
-            channels: 1,
-            frame_duration: None,
-            gain: None,
-        })
-        .expect("create decoder error");
-
-        // 無音の Opus パケット
-        let decoded = decoder
-            .decode(&[0b1111_1000, 0xFF, 0xFE])
-            .expect("decode error");
-        assert_eq!(decoded.len(), 960);
-        assert!(decoded.iter().all(|v| *v == 0));
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        assert!(encoder.encode(&[0i16; 100]).is_err());
     }
 
     #[test]
     fn encode_decode_roundtrip() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
-        let mut decoder = Decoder::new(DecoderConfig {
-            sample_rate: TEST_SAMPLE_RATE,
-            channels: TEST_CHANNELS,
-            frame_duration: None,
-            gain: None,
-        })
-        .expect("create decoder error");
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
 
-        // 無音をエンコードしてデコードする
-        let encoded = encoder
-            .encode(&[0; 960 * TEST_CHANNELS as usize])
-            .expect("encode error");
-        let decoded = decoder.decode(&encoded).expect("decode error");
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
 
-        assert_eq!(decoded.len(), 960 * TEST_CHANNELS as usize);
-        assert!(decoded.iter().all(|v| *v == 0));
+        // エンコーダーの状態を安定させるために数フレーム捨てる
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+
+        assert_eq!(decoded.len(), FRAME_SIZE);
+
+        // デコード結果が無音でないことを確認する
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "decoded RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+        );
     }
 
     #[test]
     fn decode_fec() {
-        // FEC 有効でエンコードする
         let config = EncoderConfig {
             application: Some(Application::Voip),
             inband_fec: Some(InbandFec::Enabled),
             packet_loss_perc: Some(50),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).expect("create encoder error");
-        let mut decoder = Decoder::new(DecoderConfig {
-            sample_rate: TEST_SAMPLE_RATE,
-            channels: TEST_CHANNELS,
-            frame_duration: None,
-            gain: None,
-        })
-        .expect("create decoder error");
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
 
-        // 2 フレームエンコードする
-        let pcm = [0i16; 960 * TEST_CHANNELS as usize];
-        let packet1 = encoder.encode(&pcm).expect("encode error");
-        let packet2 = encoder.encode(&pcm).expect("encode error");
+        let input = sine_wave_i16();
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let packet1 = encoder.encode(&input).unwrap();
+        let packet2 = encoder.encode(&input).unwrap();
 
         // packet1 を通常デコードする
-        let decoded1 = decoder.decode(&packet1).expect("decode error");
-        assert_eq!(decoded1.len(), 960 * TEST_CHANNELS as usize);
+        decoder.decode(&packet1).unwrap();
 
-        // packet2 の FEC から packet1 相当のフレームを復元する (パケットロスのシミュレーション)
-        let fec_decoded = decoder.decode_fec(&packet2).expect("decode_fec error");
-        assert_eq!(fec_decoded.len(), 960 * TEST_CHANNELS as usize);
+        // packet2 の FEC で packet1 相当のフレームを復元する
+        let fec_decoded = decoder.decode_fec(&packet2).unwrap();
+        assert_eq!(fec_decoded.len(), FRAME_SIZE);
+
+        // FEC 復元結果が無音でないことを確認する
+        let fec_rms = rms_i16(&fec_decoded);
+        assert!(
+            fec_rms > 0.0,
+            "FEC decoded frame should not be silent, got RMS={fec_rms}"
+        );
 
         // packet2 を通常デコードする
-        let decoded2 = decoder.decode(&packet2).expect("decode error");
-        assert_eq!(decoded2.len(), 960 * TEST_CHANNELS as usize);
+        let decoded2 = decoder.decode(&packet2).unwrap();
+        let output_rms = rms_i16(&decoded2);
+        assert!(
+            output_rms > 0.0,
+            "decoded frame after FEC should not be silent"
+        );
     }
 
     #[test]
     fn decode_plc() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
-        let mut decoder = Decoder::new(DecoderConfig {
-            sample_rate: TEST_SAMPLE_RATE,
-            channels: TEST_CHANNELS,
-            frame_duration: None,
-            gain: None,
-        })
-        .expect("create decoder error");
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
 
-        // まず正常にデコードしてデコーダーの状態を作る
-        let pcm = [0i16; 960 * TEST_CHANNELS as usize];
-        let encoded = encoder.encode(&pcm).expect("encode error");
-        decoder.decode(&encoded).expect("decode error");
+        let input = sine_wave_i16();
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        // 最後のフレームをデコードしてデコーダーに状態を持たせる
+        let encoded = encoder.encode(&input).unwrap();
+        decoder.decode(&encoded).unwrap();
 
         // PLC で補間フレームを生成する
-        let plc = decoder.decode_plc().expect("decode_plc error");
-        assert_eq!(plc.len(), 960 * TEST_CHANNELS as usize);
+        let plc = decoder.decode_plc().unwrap();
+        assert_eq!(plc.len(), FRAME_SIZE);
+
+        // サイン波入力後の PLC は無音ではないはず
+        let plc_rms = rms_i16(&plc);
+        assert!(
+            plc_rms > 0.0,
+            "PLC frame after sine wave should not be silent, got RMS={plc_rms}"
+        );
+    }
+
+    // --- f32 エンコード/デコードテスト ---
+
+    #[test]
+    fn encode_f32_pcm_length_mismatch() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        assert!(encoder.encode_f32(&[0.0f32; 100]).is_err());
     }
 
     #[test]
+    fn encode_f32_decode_f32_roundtrip() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_f32();
+        let input_rms = rms_f32(&input);
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode_f32(&input).unwrap();
+            decoder.decode_f32(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode_f32(&input).unwrap();
+        let decoded = decoder.decode_f32(&encoded).unwrap();
+
+        assert_eq!(decoded.len(), FRAME_SIZE);
+
+        // デコード結果の RMS が入力の 50% 以上であることを確認する
+        let output_rms = rms_f32(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "decoded RMS ({output_rms:.4}) is too low compared to input RMS ({input_rms:.4})"
+        );
+    }
+
+    #[test]
+    fn decode_fec_f32() {
+        let config = EncoderConfig {
+            application: Some(Application::Voip),
+            inband_fec: Some(InbandFec::Enabled),
+            packet_loss_perc: Some(50),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_f32();
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode_f32(&input).unwrap();
+            decoder.decode_f32(&encoded).unwrap();
+        }
+
+        let packet1 = encoder.encode_f32(&input).unwrap();
+        let packet2 = encoder.encode_f32(&input).unwrap();
+
+        decoder.decode_f32(&packet1).unwrap();
+
+        let fec_decoded = decoder.decode_fec_f32(&packet2).unwrap();
+        assert_eq!(fec_decoded.len(), FRAME_SIZE);
+
+        let fec_rms = rms_f32(&fec_decoded);
+        assert!(
+            fec_rms > 0.0,
+            "FEC decoded f32 frame should not be silent, got RMS={fec_rms}"
+        );
+
+        let decoded2 = decoder.decode_f32(&packet2).unwrap();
+        let output_rms = rms_f32(&decoded2);
+        assert!(
+            output_rms > 0.0,
+            "decoded f32 frame after FEC should not be silent"
+        );
+    }
+
+    #[test]
+    fn decode_plc_f32() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_f32();
+
+        for _ in 0..5 {
+            let encoded = encoder.encode_f32(&input).unwrap();
+            decoder.decode_f32(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode_f32(&input).unwrap();
+        decoder.decode_f32(&encoded).unwrap();
+
+        let plc = decoder.decode_plc_f32().unwrap();
+        assert_eq!(plc.len(), FRAME_SIZE);
+
+        let plc_rms = rms_f32(&plc);
+        assert!(
+            plc_rms > 0.0,
+            "PLC f32 frame after sine wave should not be silent, got RMS={plc_rms}"
+        );
+    }
+
+    // --- i24 エンコード/デコードテスト ---
+
+    #[test]
+    fn encode_i24_pcm_length_mismatch() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        assert!(encoder.encode_i24(&[0i32; 100]).is_err());
+    }
+
+    #[test]
+    fn encode_i24_decode_i24_roundtrip() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i24();
+        let input_rms = rms_i32(&input);
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode_i24(&input).unwrap();
+            decoder.decode_i24(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode_i24(&input).unwrap();
+        let decoded = decoder.decode_i24(&encoded).unwrap();
+
+        assert_eq!(decoded.len(), FRAME_SIZE);
+
+        // デコード結果の RMS が入力の 50% 以上であることを確認する
+        let output_rms = rms_i32(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "decoded i24 RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+        );
+    }
+
+    #[test]
+    fn decode_fec_i24() {
+        let config = EncoderConfig {
+            application: Some(Application::Voip),
+            inband_fec: Some(InbandFec::Enabled),
+            packet_loss_perc: Some(50),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i24();
+
+        for _ in 0..5 {
+            let encoded = encoder.encode_i24(&input).unwrap();
+            decoder.decode_i24(&encoded).unwrap();
+        }
+
+        let packet1 = encoder.encode_i24(&input).unwrap();
+        let packet2 = encoder.encode_i24(&input).unwrap();
+
+        decoder.decode_i24(&packet1).unwrap();
+
+        let fec_decoded = decoder.decode_fec_i24(&packet2).unwrap();
+        assert_eq!(fec_decoded.len(), FRAME_SIZE);
+
+        let fec_rms = rms_i32(&fec_decoded);
+        assert!(
+            fec_rms > 0.0,
+            "FEC decoded i24 frame should not be silent, got RMS={fec_rms}"
+        );
+
+        let decoded2 = decoder.decode_i24(&packet2).unwrap();
+        let output_rms = rms_i32(&decoded2);
+        assert!(
+            output_rms > 0.0,
+            "decoded i24 frame after FEC should not be silent"
+        );
+    }
+
+    #[test]
+    fn decode_plc_i24() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i24();
+
+        for _ in 0..5 {
+            let encoded = encoder.encode_i24(&input).unwrap();
+            decoder.decode_i24(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode_i24(&input).unwrap();
+        decoder.decode_i24(&encoded).unwrap();
+
+        let plc = decoder.decode_plc_i24().unwrap();
+        assert_eq!(plc.len(), FRAME_SIZE);
+
+        let plc_rms = rms_i32(&plc);
+        assert!(
+            plc_rms > 0.0,
+            "PLC i24 frame after sine wave should not be silent, got RMS={plc_rms}"
+        );
+    }
+
+    // --- リセットテスト ---
+
+    #[test]
     fn encoder_reset() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
 
-        // エンコードしてから状態をリセットする
-        let pcm = [0i16; 960 * TEST_CHANNELS as usize];
-        encoder.encode(&pcm).expect("encode error");
-        encoder.reset().expect("reset error");
+        let input = sine_wave_i16();
+        encoder.encode(&input).unwrap();
+        encoder.reset().unwrap();
 
-        // リセット後も正常にエンコードできる
-        let encoded = encoder.encode(&pcm).expect("encode after reset error");
+        // リセット後もサイン波を正常にエンコードできる
+        let encoded = encoder.encode(&input).unwrap();
         assert!(!encoded.is_empty());
     }
 
     #[test]
     fn decoder_reset() {
-        let mut decoder = Decoder::new(DecoderConfig {
-            sample_rate: TEST_SAMPLE_RATE,
-            channels: TEST_CHANNELS,
-            frame_duration: None,
-            gain: None,
-        })
-        .expect("create decoder error");
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
 
-        decoder.reset().expect("reset error");
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
 
-        // リセット後も正常にデコードできる
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).expect("create encoder error");
-        let pcm = [0i16; 960 * TEST_CHANNELS as usize];
-        let encoded = encoder.encode(&pcm).expect("encode error");
-        let decoded = decoder.decode(&encoded).expect("decode after reset error");
-        assert_eq!(decoded.len(), 960 * TEST_CHANNELS as usize);
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        decoder.reset().unwrap();
+
+        // リセット後、再度安定させてからデコード結果を検証する
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "decoded RMS after reset ({output_rms:.1}) is too low"
+        );
     }
+
+    // --- その他のテスト ---
 
     #[test]
     fn error_reason() {

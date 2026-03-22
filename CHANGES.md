@@ -11,6 +11,14 @@
 
 ## develop
 
+- [ADD] エンコーダーに f32 入力の `Encoder::encode_f32()` を追加する
+  - @voluntas
+- [ADD] エンコーダーに 24bit 入力の `Encoder::encode_i24()` を追加する
+  - @voluntas
+- [ADD] デコーダーに f32 出力の `Decoder::decode_f32()` / `decode_fec_f32()` / `decode_plc_f32()` を追加する
+  - @voluntas
+- [ADD] デコーダーに 24bit 出力の `Decoder::decode_i24()` / `decode_fec_i24()` / `decode_plc_i24()` を追加する
+  - @voluntas
 - [UPDATE] Opus ライブラリのバージョンを v1.5.2 から v1.6.1 に更新する
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
