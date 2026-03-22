@@ -31,7 +31,7 @@ fn main() {
     let output_bindings_path = out_dir.join("bindings.rs");
 
     // 各種メタデータを書き込む
-    let (git_url, version) = get_git_url_and_version();
+    let source_meta = get_source_metadata();
     fs::write(
         output_metadata_path,
         format!(
@@ -39,7 +39,7 @@ fn main() {
                 "pub const BUILD_METADATA_REPOSITORY: &str={:?};\n",
                 "pub const BUILD_METADATA_VERSION: &str={:?};\n",
             ),
-            git_url, version
+            source_meta.url, source_meta.version
         ),
     )
     .expect("failed to write metadata file");
@@ -225,13 +225,16 @@ fn compute_sha256(path: &Path) -> String {
 // ソースからビルドする
 fn build_from_source(out_dir: &Path, output_bindings_path: &Path) -> PathBuf {
     let out_build_dir = out_dir.join("build/");
-    let src_dir = out_build_dir.join(LIB_NAME);
-    let input_header_path = src_dir.join("include/opus.h");
     let _ = fs::remove_dir_all(&out_build_dir);
     fs::create_dir(&out_build_dir).expect("failed to create build directory");
 
-    // 依存ライブラリのリポジトリを取得する
-    git_clone_external_lib(&out_build_dir);
+    // 依存ライブラリのソースアーカイブをダウンロード・展開する
+    download_and_extract_source(&out_build_dir);
+
+    let source_meta = get_source_metadata();
+    let archive_stem = format!("{LIB_NAME}-{}", source_meta.version);
+    let src_dir = out_build_dir.join(&archive_stem);
+    let input_header_path = src_dir.join("include/opus.h");
 
     // 依存ライブラリを shiguredo_cmake でビルドする
     shiguredo_cmake::set_cmake_env();
@@ -652,48 +655,81 @@ fn detect_linux_distro() -> String {
     );
 }
 
-// --- 既存のヘルパー関数 ---
+/// ソースアーカイブをダウンロードして展開する
+///
+/// ダウンロード後に SHA256 チェックサムを検証する。
+fn download_and_extract_source(build_dir: &Path) {
+    let meta = get_source_metadata();
+    let filename = format!("{LIB_NAME}-{}.tar.gz", meta.version);
+    let archive_path = build_dir.join(&filename);
+    let archive_url = format!("{}{}", meta.url, filename);
 
-// 外部ライブラリのリポジトリを git clone する
-fn git_clone_external_lib(build_dir: &Path) {
-    let (git_url, version) = get_git_url_and_version();
-    let success = Command::new("git")
-        .arg("clone")
-        .arg("--depth")
-        .arg("1")
-        .arg("--branch")
-        .arg(version)
-        .arg(git_url)
-        .current_dir(build_dir)
+    eprintln!("ソースアーカイブをダウンロード中: {}", archive_url);
+    let status = Command::new("curl")
+        .args(["-fsSL", "-o"])
+        .arg(&archive_path)
+        .arg(&archive_url)
         .status()
-        .is_ok_and(|status| status.success());
-    if !success {
-        panic!("failed to clone {LIB_NAME} repository");
+        .expect("failed to execute curl");
+    if !status.success() {
+        panic!("failed to download source archive: {}", archive_url);
+    }
+
+    // SHA256 チェックサムを検証する
+    let actual = compute_sha256(&archive_path);
+    if actual != meta.sha256 {
+        panic!(
+            "SHA256 checksum mismatch:\n  expected: {}\n  actual:   {}",
+            meta.sha256, actual
+        );
+    }
+    eprintln!("SHA256 checksum verified: {}", actual);
+
+    // tar で展開する
+    let status = Command::new("tar")
+        .args(["xzf"])
+        .arg(&archive_path)
+        .arg("-C")
+        .arg(build_dir)
+        .status()
+        .expect("failed to execute tar");
+    if !status.success() {
+        panic!("failed to extract source archive");
     }
 }
 
-// Cargo.toml から依存ライブラリの Git URL とバージョンタグを取得する
-fn get_git_url_and_version() -> (String, String) {
+/// ソースアーカイブのメタデータ
+struct SourceMetadata {
+    url: String,
+    version: String,
+    sha256: String,
+}
+
+/// Cargo.toml から依存ライブラリのメタデータを取得する
+fn get_source_metadata() -> SourceMetadata {
     let cargo_toml =
         shiguredo_toml::from_str(include_str!("Cargo.toml")).expect("failed to parse Cargo.toml");
-    let deps = cargo_toml
+    let dep = cargo_toml
         .get("package")
         .and_then(|v| v.get("metadata"))
         .and_then(|v| v.get("external-dependencies"))
-        .and_then(|v| v.get(LIB_NAME));
-    if let Some(dep) = deps {
-        let git_url = dep
-            .get("git")
+        .and_then(|v| v.get(LIB_NAME))
+        .unwrap_or_else(|| {
+            panic!(
+                "Cargo.toml does not contain a valid [package.metadata.external-dependencies.{LIB_NAME}] table"
+            )
+        });
+
+    let get_str = |key: &str| -> String {
+        dep.get(key)
             .and_then(|s| s.as_str())
-            .expect("missing 'git' field in external-dependencies");
-        let version = dep
-            .get("version")
-            .and_then(|s| s.as_str())
-            .expect("missing 'version' field in external-dependencies");
-        (git_url.to_string(), version.to_string())
-    } else {
-        panic!(
-            "Cargo.toml does not contain a valid [package.metadata.external-dependencies.{LIB_NAME}] table"
-        );
+            .unwrap_or_else(|| panic!("missing '{key}' field in external-dependencies.{LIB_NAME}"))
+            .to_string()
+    };
+
+    SourceMetadata {
+        url: get_str("url"),
+        version: get_str("version"),
+        sha256: get_str("sha256"),
     }
 }

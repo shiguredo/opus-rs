@@ -25,5 +25,8 @@ shiguredo_toml = "2026.1.0"
 
 # 以降は外部ライブラリビルド用のメタデータ
 # (この内容は build.rs の中からのみ参照される)
-[package.metadata.external-dependencies]
-opus = { git = "https://github.com/xiph/opus.git", version = "v1.6.1" }
+[package.metadata.external-dependencies.opus]
+version = "1.6.1"
+# origin: https://downloads.xiph.org/releases/opus/
+url = "https://oss-mirrors.shiguredo.jp/"
+sha256 = "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"

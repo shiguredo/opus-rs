@@ -74,6 +74,8 @@
 
 ### misc
 
+- source-build のソース取得方法を git clone からリリースアーカイブのダウンロードに変更する
+  - @voluntas
 - `cargo-fuzz` による fuzz テストターゲットを追加する
   - @voluntas
 - Hisui 固有の記述を削除して OSS 公開用に変更する
