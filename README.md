@@ -15,7 +15,7 @@ Please read <https://github.com/shiguredo/oss> before use.
 
 利用前に <https://github.com/shiguredo/oss> をお読みください。
 
-## shiguredo_opus について
+## 概要
 
 [xiph/opus](https://github.com/xiph/opus) を利用した Opus エンコーダーおよびデコーダーの Rust バインディングです。
 
