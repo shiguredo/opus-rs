@@ -15,6 +15,10 @@
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
   - @voluntas
+- [ADD] エンコーダーに GET 系 CTL `get_bitrate()` / `get_bandwidth()` / `get_complexity()` / `get_vbr()` / `get_inband_fec()` / `get_dtx()` / `get_sample_rate()` を追加する
+  - @voluntas
+- [ADD] デコーダーに GET 系 CTL `get_bandwidth()` / `get_gain()` / `get_last_packet_duration()` / `get_pitch()` を追加する
+  - @voluntas
 - [ADD] パケットユーティリティ関数 `packet_get_bandwidth()` / `packet_get_nb_channels()` / `packet_get_nb_frames()` / `packet_get_samples_per_frame()` / `packet_get_nb_samples()` を追加する
   - @voluntas
 - [ADD] `Bandwidth::from_opus()` による C 定数からの逆変換を追加する

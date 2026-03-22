@@ -822,6 +822,108 @@ impl Encoder {
         }
     }
 
+    /// 現在のビットレートを取得する (bps)
+    pub fn get_bitrate(&self) -> Result<u32, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code =
+                sys::opus_encoder_ctl(self.inner, sys::OPUS_GET_BITRATE_REQUEST as i32, &mut value);
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_BITRATE)")?;
+        }
+        Ok(value as u32)
+    }
+
+    /// 現在の帯域幅を取得する
+    ///
+    /// エンコーダーがビットレートや入力信号に基づいて自動選択した帯域幅を返す。
+    pub fn get_bandwidth(&self) -> Result<Bandwidth, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_encoder_ctl(
+                self.inner,
+                sys::OPUS_GET_BANDWIDTH_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_BANDWIDTH)")?;
+        }
+        Bandwidth::from_opus(value as i32).ok_or(Error {
+            code: sys::OPUS_INTERNAL_ERROR,
+            function: "opus_encoder_ctl(OPUS_GET_BANDWIDTH)",
+        })
+    }
+
+    /// 現在の計算量を取得する (0-10)
+    pub fn get_complexity(&self) -> Result<u8, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_encoder_ctl(
+                self.inner,
+                sys::OPUS_GET_COMPLEXITY_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_COMPLEXITY)")?;
+        }
+        Ok(value as u8)
+    }
+
+    /// VBR 設定を取得する
+    pub fn get_vbr(&self) -> Result<bool, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code =
+                sys::opus_encoder_ctl(self.inner, sys::OPUS_GET_VBR_REQUEST as i32, &mut value);
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_VBR)")?;
+        }
+        Ok(value != 0)
+    }
+
+    /// FEC 設定を取得する
+    pub fn get_inband_fec(&self) -> Result<InbandFec, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_encoder_ctl(
+                self.inner,
+                sys::OPUS_GET_INBAND_FEC_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_INBAND_FEC)")?;
+        }
+        match value {
+            0 => Ok(InbandFec::Disabled),
+            1 => Ok(InbandFec::Enabled),
+            2 => Ok(InbandFec::EnabledKeepMusic),
+            _ => Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_encoder_ctl(OPUS_GET_INBAND_FEC)",
+            }),
+        }
+    }
+
+    /// DTX 設定を取得する
+    pub fn get_dtx(&self) -> Result<bool, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code =
+                sys::opus_encoder_ctl(self.inner, sys::OPUS_GET_DTX_REQUEST as i32, &mut value);
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_DTX)")?;
+        }
+        Ok(value != 0)
+    }
+
+    /// サンプルレートを取得する (Hz)
+    pub fn get_sample_rate(&self) -> Result<u32, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_encoder_ctl(
+                self.inner,
+                sys::OPUS_GET_SAMPLE_RATE_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_encoder_ctl(OPUS_GET_SAMPLE_RATE)")?;
+        }
+        Ok(value as u32)
+    }
+
     /// 1 フレーム分の PCM 音声データをエンコードする
     ///
     /// インターリーブ形式の i16 PCM データを受け取り、Opus フォーマットに圧縮する。
@@ -1082,6 +1184,63 @@ impl Decoder {
             let code = sys::opus_decoder_ctl(self.inner, sys::OPUS_RESET_STATE as i32);
             Error::check(code, "opus_decoder_ctl(OPUS_RESET_STATE)")
         }
+    }
+
+    /// 最後にデコードしたパケットの帯域幅を取得する
+    ///
+    /// デコード前に呼ぶと `OPUS_AUTO` (自動) に相当する値が返る場合がある。
+    pub fn get_bandwidth(&self) -> Result<Bandwidth, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_decoder_ctl(
+                self.inner,
+                sys::OPUS_GET_BANDWIDTH_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_decoder_ctl(OPUS_GET_BANDWIDTH)")?;
+        }
+        Bandwidth::from_opus(value as i32).ok_or(Error {
+            code: sys::OPUS_INTERNAL_ERROR,
+            function: "opus_decoder_ctl(OPUS_GET_BANDWIDTH)",
+        })
+    }
+
+    /// 現在のゲイン設定を取得する (Q8 dB 単位)
+    pub fn get_gain(&self) -> Result<i32, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code =
+                sys::opus_decoder_ctl(self.inner, sys::OPUS_GET_GAIN_REQUEST as i32, &mut value);
+            Error::check(code, "opus_decoder_ctl(OPUS_GET_GAIN)")?;
+        }
+        Ok(value as i32)
+    }
+
+    /// 最後にデコードしたパケットのサンプル数を取得する (チャンネルあたり)
+    pub fn get_last_packet_duration(&self) -> Result<usize, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code = sys::opus_decoder_ctl(
+                self.inner,
+                sys::OPUS_GET_LAST_PACKET_DURATION_REQUEST as i32,
+                &mut value,
+            );
+            Error::check(code, "opus_decoder_ctl(OPUS_GET_LAST_PACKET_DURATION)")?;
+        }
+        Ok(value as usize)
+    }
+
+    /// 最後にデコードしたフレームのピッチ周期を取得する
+    ///
+    /// 音声のピッチ検出に使用できる。利用不可の場合は 0 を返す。
+    pub fn get_pitch(&self) -> Result<i32, Error> {
+        let mut value: c_int = 0;
+        unsafe {
+            let code =
+                sys::opus_decoder_ctl(self.inner, sys::OPUS_GET_PITCH_REQUEST as i32, &mut value);
+            Error::check(code, "opus_decoder_ctl(OPUS_GET_PITCH)")?;
+        }
+        Ok(value as i32)
     }
 
     /// 1 パケット分の圧縮データをデコードする
@@ -2263,5 +2422,79 @@ mod tests {
 
         // 不明な値
         assert!(Bandwidth::from_opus(9999).is_none());
+    }
+
+    // --- GET 系 CTL テスト ---
+
+    #[test]
+    fn encoder_get_ctls() {
+        let config = EncoderConfig {
+            bitrate: Some(96_000),
+            complexity: Some(5),
+            vbr: Some(false),
+            inband_fec: Some(InbandFec::Enabled),
+            dtx: Some(true),
+            ..EncoderConfig::new(48000, 2)
+        };
+        let encoder = Encoder::new(config).unwrap();
+
+        assert_eq!(encoder.get_bitrate().unwrap(), 96_000);
+        assert_eq!(encoder.get_complexity().unwrap(), 5);
+        assert!(!encoder.get_vbr().unwrap());
+        assert_eq!(encoder.get_inband_fec().unwrap(), InbandFec::Enabled);
+        assert!(encoder.get_dtx().unwrap());
+        assert_eq!(encoder.get_sample_rate().unwrap(), 48000);
+    }
+
+    #[test]
+    fn encoder_get_bandwidth_after_encode() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let input = sine_wave_i16();
+
+        // エンコード後に帯域幅を取得できる
+        encoder.encode(&input).unwrap();
+        let bw = encoder.get_bandwidth().unwrap();
+        assert!(
+            bw == Bandwidth::Fullband
+                || bw == Bandwidth::Superwideband
+                || bw == Bandwidth::Wideband,
+            "unexpected bandwidth: {bw:?}"
+        );
+    }
+
+    #[test]
+    fn decoder_get_ctls() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let config = DecoderConfig {
+            gain: Some(256),
+            ..decoder_config()
+        };
+        let mut decoder = Decoder::new(config).unwrap();
+
+        // ゲインの確認
+        assert_eq!(decoder.get_gain().unwrap(), 256);
+
+        // デコード前は last_packet_duration は 0
+        assert_eq!(decoder.get_last_packet_duration().unwrap(), 0);
+
+        // デコード後の状態を確認する
+        let input = sine_wave_i16();
+        let encoded = encoder.encode(&input).unwrap();
+        decoder.decode(&encoded).unwrap();
+
+        let duration = decoder.get_last_packet_duration().unwrap();
+        assert_eq!(duration, FRAME_SAMPLES);
+
+        let bw = decoder.get_bandwidth().unwrap();
+        assert!(
+            bw == Bandwidth::Fullband
+                || bw == Bandwidth::Superwideband
+                || bw == Bandwidth::Wideband,
+            "unexpected bandwidth: {bw:?}"
+        );
+
+        // ピッチは 0 以上 (利用不可の場合は 0)
+        let pitch = decoder.get_pitch().unwrap();
+        assert!(pitch >= 0, "unexpected pitch: {pitch}");
     }
 }
