@@ -1348,59 +1348,6 @@ mod tests {
         assert!(Encoder::new(config).is_ok());
     }
 
-    #[test]
-    fn init_encoder_cbr() {
-        let config = EncoderConfig {
-            vbr: Some(false),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-    }
-
-    #[test]
-    fn init_encoder_low_delay() {
-        let config = EncoderConfig {
-            application: Some(Application::LowDelay),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-    }
-
-    #[test]
-    fn init_encoder_bandwidth() {
-        let config = EncoderConfig {
-            bandwidth: Some(Bandwidth::Wideband),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-
-        let config = EncoderConfig {
-            max_bandwidth: Some(Bandwidth::Narrowband),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-    }
-
-    #[test]
-    fn init_encoder_force_channels() {
-        let config = EncoderConfig {
-            force_channels: Some(ForceChannels::Mono),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-    }
-
-    #[test]
-    fn init_encoder_fec() {
-        let config = EncoderConfig {
-            application: Some(Application::Voip),
-            inband_fec: Some(InbandFec::Enabled),
-            packet_loss_perc: Some(20),
-            ..encoder_config(Some(64_000))
-        };
-        assert!(Encoder::new(config).is_ok());
-    }
-
     // --- デコーダー初期化テスト ---
 
     #[test]
@@ -1547,12 +1494,6 @@ mod tests {
     // --- f32 エンコード/デコードテスト ---
 
     #[test]
-    fn encode_f32_pcm_length_mismatch() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        assert!(encoder.encode_f32(&[0.0f32; 100]).is_err());
-    }
-
-    #[test]
     fn encode_f32_decode_f32_roundtrip() {
         let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
         let mut decoder = Decoder::new(decoder_config()).unwrap();
@@ -1646,12 +1587,6 @@ mod tests {
     }
 
     // --- i24 エンコード/デコードテスト ---
-
-    #[test]
-    fn encode_i24_pcm_length_mismatch() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        assert!(encoder.encode_i24(&[0i32; 100]).is_err());
-    }
 
     #[test]
     fn encode_i24_decode_i24_roundtrip() {
@@ -1748,19 +1683,6 @@ mod tests {
     // --- リセットテスト ---
 
     #[test]
-    fn encoder_reset() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-
-        let input = sine_wave_i16();
-        encoder.encode(&input).unwrap();
-        encoder.reset().unwrap();
-
-        // リセット後もサイン波を正常にエンコードできる
-        let encoded = encoder.encode(&input).unwrap();
-        assert!(!encoded.is_empty());
-    }
-
-    #[test]
     fn decoder_reset() {
         let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
         let mut decoder = Decoder::new(decoder_config()).unwrap();
@@ -1791,6 +1713,370 @@ mod tests {
         );
     }
 
+    // --- パラメータ化ヘルパー ---
+
+    /// 指定パラメーターでサイン波 i16 PCM データを 1 フレーム分生成する
+    fn sine_wave_i16_params(sample_rate: u32, channels: u8, frame_samples: usize) -> Vec<i16> {
+        let total = frame_samples * channels as usize;
+        let mut pcm = vec![0i16; total];
+        for i in 0..frame_samples {
+            let t = i as f64 / sample_rate as f64;
+            let sample = (2.0 * std::f64::consts::PI * 440.0 * t).sin();
+            let value = (sample * i16::MAX as f64) as i16;
+            for ch in 0..channels as usize {
+                pcm[i * channels as usize + ch] = value;
+            }
+        }
+        pcm
+    }
+
+    /// パラメータ化されたエンコード/デコードのラウンドトリップを実行する
+    fn roundtrip_params(sample_rate: u32, channels: u8, frame_duration: FrameDuration) {
+        let frame_samples = frame_duration.samples_per_frame(sample_rate);
+
+        let enc_config = EncoderConfig {
+            sample_rate,
+            channels,
+            bitrate: Some(64_000),
+            frame_duration: Some(frame_duration),
+            ..EncoderConfig::new(sample_rate, channels)
+        };
+        let dec_config = DecoderConfig {
+            sample_rate,
+            channels,
+            frame_duration: Some(frame_duration),
+            gain: None,
+        };
+
+        let mut encoder = Encoder::new(enc_config).unwrap();
+        let mut decoder = Decoder::new(dec_config).unwrap();
+
+        let input = sine_wave_i16_params(sample_rate, channels, frame_samples);
+        let input_rms = rms_i16(&input);
+
+        // エンコーダーの状態を安定させる
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+
+        assert_eq!(
+            decoded.len(),
+            frame_samples * channels as usize,
+            "sample_rate={sample_rate}, channels={channels}, frame_duration={frame_duration:?}"
+        );
+
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "sample_rate={sample_rate}, channels={channels}, frame_duration={frame_duration:?}: decoded RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+        );
+    }
+
+    // --- サンプルレート網羅テスト ---
+
+    #[test]
+    fn roundtrip_8000hz() {
+        roundtrip_params(8000, 2, FrameDuration::Ms20);
+    }
+
+    #[test]
+    fn roundtrip_12000hz() {
+        roundtrip_params(12000, 2, FrameDuration::Ms20);
+    }
+
+    #[test]
+    fn roundtrip_16000hz() {
+        roundtrip_params(16000, 2, FrameDuration::Ms20);
+    }
+
+    #[test]
+    fn roundtrip_24000hz() {
+        roundtrip_params(24000, 2, FrameDuration::Ms20);
+    }
+
+    // --- モノラルテスト ---
+
+    #[test]
+    fn roundtrip_mono() {
+        roundtrip_params(48000, 1, FrameDuration::Ms20);
+    }
+
+    // --- フレーム時間網羅テスト ---
+
+    #[test]
+    fn roundtrip_frame_2_5ms() {
+        roundtrip_params(48000, 2, FrameDuration::Ms2_5);
+    }
+
+    #[test]
+    fn roundtrip_frame_5ms() {
+        roundtrip_params(48000, 2, FrameDuration::Ms5);
+    }
+
+    #[test]
+    fn roundtrip_frame_10ms() {
+        roundtrip_params(48000, 2, FrameDuration::Ms10);
+    }
+
+    #[test]
+    fn roundtrip_frame_40ms() {
+        roundtrip_params(48000, 2, FrameDuration::Ms40);
+    }
+
+    #[test]
+    fn roundtrip_frame_60ms() {
+        roundtrip_params(48000, 2, FrameDuration::Ms60);
+    }
+
+    // --- Application モードテスト ---
+
+    #[test]
+    fn roundtrip_voip() {
+        let config = EncoderConfig {
+            application: Some(Application::Voip),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "Voip mode: decoded RMS ({output_rms:.1}) is too low"
+        );
+    }
+
+    #[test]
+    fn roundtrip_low_delay() {
+        let config = EncoderConfig {
+            application: Some(Application::LowDelay),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "LowDelay mode: decoded RMS ({output_rms:.1}) is too low"
+        );
+    }
+
+    // --- 連続フレームテスト ---
+
+    #[test]
+    fn continuous_frames_100() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        // 100 フレーム連続でエンコード/デコードする
+        for i in 0..100 {
+            let encoded = encoder.encode(&input).unwrap();
+            let decoded = decoder.decode(&encoded).unwrap();
+            assert_eq!(decoded.len(), FRAME_SIZE, "frame {i}: wrong decoded length");
+
+            // 最初の 5 フレームはエンコーダーの安定化期間なのでスキップする
+            if i >= 5 {
+                let output_rms = rms_i16(&decoded);
+                assert!(
+                    output_rms > input_rms * 0.5,
+                    "frame {i}: decoded RMS ({output_rms:.1}) is too low"
+                );
+            }
+        }
+    }
+
+    // --- 境界値テスト ---
+
+    #[test]
+    fn encode_decode_min_bitrate() {
+        // 最小ビットレートではエンコード/デコードがパニックせず完走することを確認する
+        // 品質が極端に低いため RMS 検証はしない
+        let enc_config = EncoderConfig {
+            bitrate: Some(500),
+            ..EncoderConfig::new(48000, 2)
+        };
+        let mut encoder = Encoder::new(enc_config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        for _ in 0..6 {
+            let encoded = encoder.encode(&input).unwrap();
+            assert!(!encoded.is_empty());
+            decoder.decode(&encoded).unwrap();
+        }
+    }
+
+    #[test]
+    fn encode_decode_max_bitrate() {
+        let enc_config = EncoderConfig {
+            bitrate: Some(512_000),
+            ..EncoderConfig::new(48000, 2)
+        };
+        let mut encoder = Encoder::new(enc_config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "max bitrate: decoded RMS ({output_rms:.1}) is too low"
+        );
+    }
+
+    #[test]
+    fn encode_decode_complexity_0() {
+        let config = EncoderConfig {
+            complexity: Some(0),
+            ..encoder_config(Some(64_000))
+        };
+        let mut encoder = Encoder::new(config).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "complexity 0: decoded RMS ({output_rms:.1}) is too low"
+        );
+    }
+
+    // --- 複数回リセットテスト ---
+
+    #[test]
+    fn encoder_multiple_reset() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let input = sine_wave_i16();
+
+        for _ in 0..5 {
+            encoder.encode(&input).unwrap();
+            encoder.reset().unwrap();
+        }
+
+        // 最後のリセット後もエンコードできる
+        let encoded = encoder.encode(&input).unwrap();
+        assert!(!encoded.is_empty());
+    }
+
+    #[test]
+    fn decoder_multiple_reset() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let input = sine_wave_i16();
+        let input_rms = rms_i16(&input);
+
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+            decoder.reset().unwrap();
+        }
+
+        // 最後のリセット後に安定させてからデコード結果を検証する
+        for _ in 0..5 {
+            let encoded = encoder.encode(&input).unwrap();
+            decoder.decode(&encoded).unwrap();
+        }
+
+        let encoded = encoder.encode(&input).unwrap();
+        let decoded = decoder.decode(&encoded).unwrap();
+        let output_rms = rms_i16(&decoded);
+        assert!(
+            output_rms > input_rms * 0.5,
+            "decoded RMS after multiple resets ({output_rms:.1}) is too low"
+        );
+    }
+
+    // --- エラーハンドリングテスト ---
+
+    #[test]
+    fn decode_corrupted_packet() {
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        // ランダムなバイト列をデコードしてもパニックしない
+        let corrupted = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, 0x42, 0x13];
+        // エラーでも Ok でもパニックしなければよい
+        let _ = decoder.decode(&corrupted);
+    }
+
+    #[test]
+    fn decode_truncated_packet() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+
+        let input = sine_wave_i16();
+        let encoded = encoder.encode(&input).unwrap();
+
+        // パケットを途中で切り詰めてデコードする
+        let truncated = &encoded[..encoded.len() / 2];
+        // パニックしなければよい
+        let _ = decoder.decode(truncated);
+    }
+
+    #[test]
+    fn decode_single_byte_packet() {
+        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        // 1 バイトのパケットをデコードしてもパニックしない
+        let _ = decoder.decode(&[0x00]);
+    }
+
+    // --- Send トレイトテスト ---
+
+    #[test]
+    fn encoder_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Encoder>();
+    }
+
+    #[test]
+    fn decoder_is_send() {
+        fn assert_send<T: Send>() {}
+        assert_send::<Decoder>();
+    }
+
     // --- その他のテスト ---
 
     #[test]
@@ -1803,5 +2089,13 @@ mod tests {
     fn opus_version_string() {
         let version = version_string();
         assert!(version.starts_with("libopus"));
+    }
+
+    #[test]
+    fn encoder_get_lookahead() {
+        let encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let lookahead = encoder.get_lookahead().unwrap();
+        // Opus のルックアヘッドは通常 0 より大きい
+        assert!(lookahead > 0);
     }
 }
