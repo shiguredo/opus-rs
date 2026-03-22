@@ -1,0 +1,43 @@
+[package]
+name = "shiguredo_opus-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.shiguredo_opus]
+path = ".."
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_decode"
+path = "fuzz_targets/fuzz_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_decode_f32"
+path = "fuzz_targets/fuzz_decode_f32.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_decode_i24"
+path = "fuzz_targets/fuzz_decode_i24.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_encode_decode"
+path = "fuzz_targets/fuzz_encode_decode.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_decode_sequence"
+path = "fuzz_targets/fuzz_decode_sequence.rs"
+doc = false
