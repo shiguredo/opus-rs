@@ -29,6 +29,82 @@ pub fn version_string() -> &'static str {
     }
 }
 
+// --- パケットユーティリティ関数 ---
+
+/// パケットの帯域幅を取得する
+///
+/// Opus パケットの先頭バイトから帯域幅を判定する。
+/// デコーダーインスタンスを必要としない。
+pub fn packet_get_bandwidth(packet: &[u8]) -> Result<Bandwidth, Error> {
+    if packet.is_empty() {
+        return Err(Error {
+            code: sys::OPUS_BAD_ARG,
+            function: "packet_get_bandwidth",
+        });
+    }
+    let result = unsafe { sys::opus_packet_get_bandwidth(packet.as_ptr()) };
+    Error::check(result, "opus_packet_get_bandwidth")?;
+    Bandwidth::from_opus(result).ok_or(Error {
+        code: sys::OPUS_INVALID_PACKET,
+        function: "packet_get_bandwidth",
+    })
+}
+
+/// パケットのチャンネル数を取得する
+///
+/// Opus パケットの先頭バイトからチャンネル数を判定する。
+/// デコーダーインスタンスを必要としない。
+pub fn packet_get_nb_channels(packet: &[u8]) -> Result<u8, Error> {
+    if packet.is_empty() {
+        return Err(Error {
+            code: sys::OPUS_BAD_ARG,
+            function: "packet_get_nb_channels",
+        });
+    }
+    let result = unsafe { sys::opus_packet_get_nb_channels(packet.as_ptr()) };
+    Error::check(result, "opus_packet_get_nb_channels")?;
+    Ok(result as u8)
+}
+
+/// パケットに含まれるフレーム数を取得する
+///
+/// デコーダーインスタンスを必要としない。
+pub fn packet_get_nb_frames(packet: &[u8]) -> Result<usize, Error> {
+    let result = unsafe { sys::opus_packet_get_nb_frames(packet.as_ptr(), packet.len() as c_int) };
+    Error::check(result, "opus_packet_get_nb_frames")?;
+    Ok(result as usize)
+}
+
+/// 1 フレームあたりのサンプル数を取得する
+///
+/// Opus パケットの先頭バイトとサンプルレートから
+/// 1 フレームあたりのサンプル数（チャンネルあたり）を算出する。
+/// デコーダーインスタンスを必要としない。
+pub fn packet_get_samples_per_frame(packet: &[u8], sample_rate: u32) -> Result<usize, Error> {
+    if packet.is_empty() {
+        return Err(Error {
+            code: sys::OPUS_BAD_ARG,
+            function: "packet_get_samples_per_frame",
+        });
+    }
+    let result =
+        unsafe { sys::opus_packet_get_samples_per_frame(packet.as_ptr(), sample_rate as i32) };
+    // この関数は常に正の値を返す (エラーコードを返さない)
+    Ok(result as usize)
+}
+
+/// パケット全体のサンプル数を取得する
+///
+/// パケットに含まれる全フレームの合計サンプル数（チャンネルあたり）を返す。
+/// デコーダーインスタンスを必要としない。
+pub fn packet_get_nb_samples(packet: &[u8], sample_rate: u32) -> Result<usize, Error> {
+    let result = unsafe {
+        sys::opus_packet_get_nb_samples(packet.as_ptr(), packet.len() as i32, sample_rate as i32)
+    };
+    Error::check(result, "opus_packet_get_nb_samples")?;
+    Ok(result as usize)
+}
+
 /// Opus API のエラー
 ///
 /// Opus ライブラリが返すエラーコードをラップする。
@@ -188,6 +264,20 @@ impl Bandwidth {
             Self::Wideband => sys::OPUS_BANDWIDTH_WIDEBAND as i32,
             Self::Superwideband => sys::OPUS_BANDWIDTH_SUPERWIDEBAND as i32,
             Self::Fullband => sys::OPUS_BANDWIDTH_FULLBAND as i32,
+        }
+    }
+
+    /// Opus の帯域幅定数から `Bandwidth` に変換する
+    ///
+    /// 不明な値の場合は `None` を返す。
+    pub fn from_opus(value: i32) -> Option<Self> {
+        match value as u32 {
+            sys::OPUS_BANDWIDTH_NARROWBAND => Some(Self::Narrowband),
+            sys::OPUS_BANDWIDTH_MEDIUMBAND => Some(Self::Mediumband),
+            sys::OPUS_BANDWIDTH_WIDEBAND => Some(Self::Wideband),
+            sys::OPUS_BANDWIDTH_SUPERWIDEBAND => Some(Self::Superwideband),
+            sys::OPUS_BANDWIDTH_FULLBAND => Some(Self::Fullband),
+            _ => None,
         }
     }
 }
@@ -2097,5 +2187,81 @@ mod tests {
         let lookahead = encoder.get_lookahead().unwrap();
         // Opus のルックアヘッドは通常 0 より大きい
         assert!(lookahead > 0);
+    }
+
+    // --- パケットユーティリティテスト ---
+
+    #[test]
+    fn packet_info_from_encoded() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let input = sine_wave_i16();
+        let encoded = encoder.encode(&input).unwrap();
+
+        // 帯域幅を取得する
+        let bw = packet_get_bandwidth(&encoded).unwrap();
+        // 48kHz エンコードなので Fullband か Superwideband のはず
+        assert!(
+            bw == Bandwidth::Fullband || bw == Bandwidth::Superwideband,
+            "unexpected bandwidth: {bw:?}"
+        );
+
+        // チャンネル数を取得する
+        let channels = packet_get_nb_channels(&encoded).unwrap();
+        assert!(
+            channels == 1 || channels == 2,
+            "unexpected channels: {channels}"
+        );
+
+        // フレーム数を取得する
+        let nb_frames = packet_get_nb_frames(&encoded).unwrap();
+        assert!(nb_frames >= 1, "expected at least 1 frame, got {nb_frames}");
+
+        // サンプル数を取得する
+        let samples_per_frame = packet_get_samples_per_frame(&encoded, TEST_SAMPLE_RATE).unwrap();
+        assert!(
+            samples_per_frame > 0,
+            "expected positive samples_per_frame, got {samples_per_frame}"
+        );
+
+        let nb_samples = packet_get_nb_samples(&encoded, TEST_SAMPLE_RATE).unwrap();
+        assert_eq!(nb_samples, samples_per_frame * nb_frames);
+    }
+
+    #[test]
+    fn packet_samples_per_frame_all_rates() {
+        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let input = sine_wave_i16();
+        let encoded = encoder.encode(&input).unwrap();
+
+        // 全サンプルレートで samples_per_frame を取得できる
+        for &rate in &[8000u32, 12000, 16000, 24000, 48000] {
+            let spf = packet_get_samples_per_frame(&encoded, rate).unwrap();
+            assert!(spf > 0, "rate={rate}: expected positive samples_per_frame");
+        }
+    }
+
+    #[test]
+    fn packet_info_empty_packet() {
+        assert!(packet_get_bandwidth(&[]).is_err());
+        assert!(packet_get_nb_channels(&[]).is_err());
+        assert!(packet_get_samples_per_frame(&[], 48000).is_err());
+    }
+
+    #[test]
+    fn bandwidth_from_opus_roundtrip() {
+        for bw in [
+            Bandwidth::Narrowband,
+            Bandwidth::Mediumband,
+            Bandwidth::Wideband,
+            Bandwidth::Superwideband,
+            Bandwidth::Fullband,
+        ] {
+            let opus_value = bw.to_opus();
+            let converted = Bandwidth::from_opus(opus_value).unwrap();
+            assert_eq!(bw, converted);
+        }
+
+        // 不明な値
+        assert!(Bandwidth::from_opus(9999).is_none());
     }
 }

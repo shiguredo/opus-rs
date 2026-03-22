@@ -15,6 +15,10 @@
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
   - @voluntas
+- [ADD] パケットユーティリティ関数 `packet_get_bandwidth()` / `packet_get_nb_channels()` / `packet_get_nb_frames()` / `packet_get_samples_per_frame()` / `packet_get_nb_samples()` を追加する
+  - @voluntas
+- [ADD] `Bandwidth::from_opus()` による C 定数からの逆変換を追加する
+  - @voluntas
 - [ADD] エンコーダーに f32 入力の `Encoder::encode_f32()` を追加する
   - @voluntas
 - [ADD] エンコーダーに 24bit 入力の `Encoder::encode_i24()` を追加する
