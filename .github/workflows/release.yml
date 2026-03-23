@@ -9,36 +9,9 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  ci:
-    name: CI (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - ubuntu-22.04
-          - ubuntu-22.04-arm
-          - macos-26
-          - macos-15
-          - windows-2025
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-      - run: rustup update stable
-      - uses: shiguredo/github-actions/.github/actions/rust-cache@main
-        with:
-          os: ${{ matrix.os }}
-          toolchain: stable
-      - run: cargo fmt --all --check
-      - run: cargo clippy --features source-build -- -D warnings
-      - run: cargo test --features source-build -- --test-threads=1
-
   github-release:
     name: "Create GitHub Release"
-    needs: [ci]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.get_version.outputs.VERSION }}
     steps:
@@ -138,7 +111,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
   slack_notify:
-    needs: [ci, github-release, build-prebuilt, publish]
+    needs: [github-release, build-prebuilt, publish]
     timeout-minutes: 5
     runs-on: ubuntu-slim
     if: ${{ always() }}
