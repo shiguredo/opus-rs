@@ -129,7 +129,7 @@ decoder.reset()?;
 use shiguredo_opus;
 
 // リンクされた Opus ライブラリのバージョン文字列を取得する
-let version: &str = shiguredo_opus::version_string();
+let version: String = shiguredo_opus::version_string();
 // 例: "libopus 1.6.1"
 
 // ビルド時に参照したリポジトリ情報

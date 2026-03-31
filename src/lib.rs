@@ -20,12 +20,13 @@ pub const BUILD_VERSION: &str = sys::BUILD_METADATA_VERSION;
 ///
 /// `opus_get_version_string()` の戻り値をそのまま返す。
 /// 例: `"libopus 1.6.1"`
-pub fn version_string() -> &'static str {
+pub fn version_string() -> String {
     unsafe {
         let ptr = sys::opus_get_version_string();
-        CStr::from_ptr(ptr)
-            .to_str()
-            .expect("opus_get_version_string returned invalid UTF-8")
+        if ptr.is_null() {
+            return String::from("unknown");
+        }
+        CStr::from_ptr(ptr).to_string_lossy().into_owned()
     }
 }
 
@@ -70,7 +71,8 @@ pub fn packet_get_nb_channels(packet: &[u8]) -> Result<u8, Error> {
 ///
 /// デコーダーインスタンスを必要としない。
 pub fn packet_get_nb_frames(packet: &[u8]) -> Result<usize, Error> {
-    let result = unsafe { sys::opus_packet_get_nb_frames(packet.as_ptr(), packet.len() as c_int) };
+    let len = Error::len_as_c_int(packet.len(), "opus_packet_get_nb_frames")?;
+    let result = unsafe { sys::opus_packet_get_nb_frames(packet.as_ptr(), len) };
     Error::check(result, "opus_packet_get_nb_frames")?;
     Ok(result as usize)
 }
@@ -98,9 +100,9 @@ pub fn packet_get_samples_per_frame(packet: &[u8], sample_rate: u32) -> Result<u
 /// パケットに含まれる全フレームの合計サンプル数（チャンネルあたり）を返す。
 /// デコーダーインスタンスを必要としない。
 pub fn packet_get_nb_samples(packet: &[u8], sample_rate: u32) -> Result<usize, Error> {
-    let result = unsafe {
-        sys::opus_packet_get_nb_samples(packet.as_ptr(), packet.len() as i32, sample_rate as i32)
-    };
+    let len = Error::len_as_c_int(packet.len(), "opus_packet_get_nb_samples")?;
+    let result =
+        unsafe { sys::opus_packet_get_nb_samples(packet.as_ptr(), len, sample_rate as i32) };
     Error::check(result, "opus_packet_get_nb_samples")?;
     Ok(result as usize)
 }
@@ -125,6 +127,14 @@ impl Error {
         } else {
             Err(Self { code, function })
         }
+    }
+
+    /// usize を c_int に安全に変換する。オーバーフロー時は OPUS_BAD_ARG を返す。
+    fn len_as_c_int(len: usize, function: &'static str) -> Result<c_int, Self> {
+        c_int::try_from(len).map_err(|_| Self {
+            code: sys::OPUS_BAD_ARG,
+            function,
+        })
     }
 
     /// エラーコードを返す
@@ -600,6 +610,12 @@ impl Encoder {
             )
         };
         Error::check(error, "opus_encoder_create")?;
+        if inner.is_null() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_encoder_create returned null",
+            });
+        }
 
         // エラー時にエンコーダーを確実に破棄するためのガード
         let guard = EncoderGuard::new(inner);
@@ -985,6 +1001,12 @@ impl Encoder {
             )
         };
         Error::check(size, "opus_encode")?;
+        if size as usize > self.encode_buf.len() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_encode returned size exceeding buffer",
+            });
+        }
 
         Ok(self.encode_buf[..size as usize].to_vec())
     }
@@ -1008,6 +1030,12 @@ impl Encoder {
             )
         };
         Error::check(size, "opus_encode_float")?;
+        if size as usize > self.encode_buf.len() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_encode_float returned size exceeding buffer",
+            });
+        }
 
         Ok(self.encode_buf[..size as usize].to_vec())
     }
@@ -1030,6 +1058,12 @@ impl Encoder {
             )
         };
         Error::check(size, "opus_encode24")?;
+        if size as usize > self.encode_buf.len() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_encode24 returned size exceeding buffer",
+            });
+        }
 
         Ok(self.encode_buf[..size as usize].to_vec())
     }
@@ -1190,6 +1224,12 @@ impl Decoder {
             )
         };
         Error::check(error, "opus_decoder_create")?;
+        if inner.is_null() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decoder_create returned null",
+            });
+        }
 
         // エラー時にデコーダーを確実に破棄するためのガード
         let guard = DecoderGuard::new(inner);
@@ -1432,6 +1472,12 @@ impl Decoder {
             )
         };
         Error::check(decoded_samples, "opus_decoder_dred_decode")?;
+        if decoded_samples as usize > self.frame_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decoder_dred_decode returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         Ok(self.decode_buf[..actual_size].to_vec())
@@ -1455,6 +1501,12 @@ impl Decoder {
             )
         };
         Error::check(decoded_samples, "opus_decoder_dred_decode_float")?;
+        if decoded_samples as usize > self.frame_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decoder_dred_decode_float returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         buf.truncate(actual_size);
@@ -1479,6 +1531,12 @@ impl Decoder {
             )
         };
         Error::check(decoded_samples, "opus_decoder_dred_decode24")?;
+        if decoded_samples as usize > self.frame_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decoder_dred_decode24 returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         buf.truncate(actual_size);
@@ -1487,6 +1545,7 @@ impl Decoder {
 
     /// i16 デコード処理の内部実装
     fn decode_i16_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i16>, Error> {
+        let encoded_len = Error::len_as_c_int(encoded.len(), "opus_decode")?;
         let nb_samples = self.get_nb_samples(encoded)?;
         let buf_size = nb_samples * self.channels as usize;
         self.decode_buf.resize(buf_size, 0);
@@ -1495,13 +1554,19 @@ impl Decoder {
             sys::opus_decode(
                 self.inner,
                 encoded.as_ptr(),
-                encoded.len() as c_int,
+                encoded_len,
                 self.decode_buf.as_mut_ptr(),
                 nb_samples as c_int,
                 fec,
             )
         };
         Error::check(decoded_samples, "opus_decode")?;
+        if decoded_samples as usize > nb_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decode returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         Ok(self.decode_buf[..actual_size].to_vec())
@@ -1509,6 +1574,7 @@ impl Decoder {
 
     /// f32 デコード処理の内部実装
     fn decode_f32_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<f32>, Error> {
+        let encoded_len = Error::len_as_c_int(encoded.len(), "opus_decode_float")?;
         let nb_samples = self.get_nb_samples(encoded)?;
         let buf_size = nb_samples * self.channels as usize;
         let mut buf = vec![0.0f32; buf_size];
@@ -1517,13 +1583,19 @@ impl Decoder {
             sys::opus_decode_float(
                 self.inner,
                 encoded.as_ptr(),
-                encoded.len() as c_int,
+                encoded_len,
                 buf.as_mut_ptr(),
                 nb_samples as c_int,
                 fec,
             )
         };
         Error::check(decoded_samples, "opus_decode_float")?;
+        if decoded_samples as usize > nb_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decode_float returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         buf.truncate(actual_size);
@@ -1532,6 +1604,7 @@ impl Decoder {
 
     /// i24 デコード処理の内部実装
     fn decode_i24_internal(&mut self, encoded: &[u8], fec: c_int) -> Result<Vec<i32>, Error> {
+        let encoded_len = Error::len_as_c_int(encoded.len(), "opus_decode24")?;
         let nb_samples = self.get_nb_samples(encoded)?;
         let buf_size = nb_samples * self.channels as usize;
         let mut buf = vec![0i32; buf_size];
@@ -1540,13 +1613,19 @@ impl Decoder {
             sys::opus_decode24(
                 self.inner,
                 encoded.as_ptr(),
-                encoded.len() as c_int,
+                encoded_len,
                 buf.as_mut_ptr(),
                 nb_samples as c_int,
                 fec,
             )
         };
         Error::check(decoded_samples, "opus_decode24")?;
+        if decoded_samples as usize > nb_samples {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_decode24 returned samples exceeding buffer",
+            });
+        }
 
         let actual_size = decoded_samples as usize * self.channels as usize;
         buf.truncate(actual_size);
@@ -1555,12 +1634,9 @@ impl Decoder {
 
     /// パケットに含まれるサンプル数を取得する
     fn get_nb_samples(&self, packet: &[u8]) -> Result<usize, Error> {
+        let len = Error::len_as_c_int(packet.len(), "opus_decoder_get_nb_samples")?;
         unsafe {
-            let samples = sys::opus_decoder_get_nb_samples(
-                self.inner,
-                packet.as_ptr(),
-                packet.len() as c_int,
-            );
+            let samples = sys::opus_decoder_get_nb_samples(self.inner, packet.as_ptr(), len);
             Error::check(samples, "opus_decoder_get_nb_samples")?;
             Ok(samples as usize)
         }
@@ -1601,6 +1677,12 @@ impl DredDecoder {
         let mut error: c_int = 0;
         let inner = unsafe { sys::opus_dred_decoder_create(&mut error) };
         Error::check(error, "opus_dred_decoder_create")?;
+        if inner.is_null() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_dred_decoder_create returned null",
+            });
+        }
         Ok(Self { inner })
     }
 
@@ -1622,13 +1704,14 @@ impl DredDecoder {
         max_dred_samples: i32,
         sample_rate: i32,
     ) -> Result<i32, Error> {
+        let data_len = Error::len_as_c_int(data.len(), "opus_dred_parse")?;
         let mut dred_end: c_int = 0;
         let result = unsafe {
             sys::opus_dred_parse(
                 self.inner,
                 dred.inner,
                 data.as_ptr(),
-                data.len() as i32,
+                data_len,
                 max_dred_samples,
                 sample_rate,
                 &mut dred_end,
@@ -1680,6 +1763,12 @@ impl Dred {
         let mut error: c_int = 0;
         let inner = unsafe { sys::opus_dred_alloc(&mut error) };
         Error::check(error, "opus_dred_alloc")?;
+        if inner.is_null() {
+            return Err(Error {
+                code: sys::OPUS_INTERNAL_ERROR,
+                function: "opus_dred_alloc returned null",
+            });
+        }
         Ok(Self { inner })
     }
 }
