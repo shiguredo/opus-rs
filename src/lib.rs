@@ -1660,11 +1660,11 @@ unsafe impl Send for Decoder {}
 /// DRED デコーダー
 ///
 /// `dred` feature が必要。
-#[cfg(feature = "dred")]
 ///
 /// DRED パケットのパースと処理を行う。
 /// [`Dred`] と組み合わせて使用し、パース結果を [`Decoder::dred_decode`] で
 /// オーディオにデコードする。
+#[cfg(feature = "dred")]
 #[derive(Debug)]
 pub struct DredDecoder {
     inner: *mut sys::OpusDREDDecoder,
@@ -1747,10 +1747,10 @@ unsafe impl Send for DredDecoder {}
 /// DRED 状態
 ///
 /// `dred` feature が必要。
-#[cfg(feature = "dred")]
 ///
 /// DRED パケットのパース結果を保持する。
 /// [`DredDecoder::parse`] で書き込み、[`Decoder::dred_decode`] で読み出す。
+#[cfg(feature = "dred")]
 #[derive(Debug)]
 pub struct Dred {
     inner: *mut sys::OpusDRED,
