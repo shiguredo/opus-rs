@@ -15,13 +15,11 @@
 
 ## 2026.1.0
 
-**リリース日**: 2025-03-31
+**リリース日**: 2026-03-31
 
 - [UPDATE] Opus ライブラリのバージョンを v1.5.2 から v1.6.1 に更新する
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
-  - @voluntas
-- [CHANGE] `dred` feature から `source-build` への依存を外し prebuilt に DRED を含めるようにする
   - @voluntas
 - [ADD] DRED (Deep Redundancy) API を `dred` feature として追加する (`DredDecoder` / `Dred` / `Decoder::dred_decode()`)
   - @voluntas
@@ -60,6 +58,8 @@
 - [ADD] エンコーダーとデコーダーに状態リセット機能 `reset()` を追加する
   - @voluntas
 - [ADD] エンコーダーに `frame_samples()` を追加する
+  - @voluntas
+- [CHANGE] `dred` feature から `source-build` への依存を外し prebuilt に DRED を含めるようにする
   - @voluntas
 - [CHANGE] エンコーダーのコンストラクタを `Encoder::new(sample_rate, channels, bitrate)` から `Encoder::new(EncoderConfig)` に変更する
   - @voluntas
