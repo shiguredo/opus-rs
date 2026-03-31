@@ -15,7 +15,7 @@ include = ["/src/**/*", "/build.rs", "/README.md", "/LICENSE"]
 [features]
 default = ["dred"]
 source-build = []
-dred = ["source-build"]
+dred = []
 
 [dependencies]
 

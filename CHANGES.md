@@ -21,6 +21,8 @@
   - @voluntas
 - [UPDATE] エラーメッセージにパッケージ名を含めるようにする
   - @voluntas
+- [CHANGE] `dred` feature から `source-build` への依存を外し prebuilt に DRED を含めるようにする
+  - @voluntas
 - [ADD] DRED (Deep Redundancy) API を `dred` feature として追加する (`DredDecoder` / `Dred` / `Decoder::dred_decode()`)
   - @voluntas
 - [ADD] エンコーダーに GET 系 CTL `get_bitrate()` / `get_bandwidth()` / `get_complexity()` / `get_vbr()` / `get_inband_fec()` / `get_dtx()` / `get_sample_rate()` を追加する
