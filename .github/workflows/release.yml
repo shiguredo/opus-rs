@@ -1,0 +1,127 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "*"
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  github-release:
+    name: "Create GitHub Release"
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Get the version
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if ${{ contains(steps.get_version.outputs.VERSION, 'canary') }}; then
+            gh release create ${{ steps.get_version.outputs.VERSION }} \
+              --prerelease \
+              --title "${{ steps.get_version.outputs.VERSION }}" \
+              --notes "Release ${{ steps.get_version.outputs.VERSION }}"
+          else
+            gh release create ${{ steps.get_version.outputs.VERSION }} \
+              --title "${{ steps.get_version.outputs.VERSION }}" \
+              --notes "Release ${{ steps.get_version.outputs.VERSION }}"
+          fi
+
+  build-prebuilt:
+    name: "Build prebuilt (${{ matrix.target }})"
+    needs: github-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: ubuntu-24.04_x86_64
+            os: ubuntu-24.04
+          - target: ubuntu-24.04_arm64
+            os: ubuntu-24.04-arm
+          - target: ubuntu-22.04_x86_64
+            os: ubuntu-22.04
+          - target: ubuntu-22.04_arm64
+            os: ubuntu-22.04-arm
+          - target: macos_arm64
+            os: macos-15
+          - target: windows_x86_64
+            os: windows-2025
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Build with source-build
+        run: cargo build --release --features source-build
+
+      - name: Create prebuilt archive
+        shell: bash
+        run: |
+          OUT_DIR=$(find target/release/build/shiguredo_opus-*/out -maxdepth 0 -type d 2>/dev/null | head -1)
+          mkdir -p staging/lib
+          cp "${OUT_DIR}/lib/libopus.a" staging/lib/ 2>/dev/null || cp "${OUT_DIR}/lib/opus.lib" staging/lib/ 2>/dev/null
+          cp "${OUT_DIR}/bindings.rs" staging/
+          tar czf libopus-${{ matrix.target }}.tar.gz -C staging .
+
+      - name: Generate SHA256 checksum
+        shell: bash
+        run: |
+          if command -v sha256sum &> /dev/null; then
+            sha256sum libopus-${{ matrix.target }}.tar.gz > libopus-${{ matrix.target }}.tar.gz.sha256
+          else
+            shasum -a 256 libopus-${{ matrix.target }}.tar.gz > libopus-${{ matrix.target }}.tar.gz.sha256
+          fi
+
+      - name: Upload prebuilt archive
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.github-release.outputs.version }} \
+            libopus-${{ matrix.target }}.tar.gz \
+            libopus-${{ matrix.target }}.tar.gz.sha256 \
+            --clobber
+
+  publish:
+    needs: [github-release, build-prebuilt]
+    timeout-minutes: 10
+    runs-on: macos-26
+    environment: release
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  slack_notify:
+    needs: [github-release, build-prebuilt, publish]
+    timeout-minutes: 5
+    runs-on: ubuntu-slim
+    if: ${{ always() }}
+    permissions:
+      actions: read
+    steps:
+      - name: Slack Notification
+        uses: shiguredo/github-actions/.github/actions/slack-notify@main
+        with:
+          status: ${{ job.status }}
+          slack_webhook: ${{ secrets.SLACK_WEBHOOK }}
+          slack_channel: rust-oss
+          notify_mode: failure_and_fixed

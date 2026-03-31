@@ -1,0 +1,33 @@
+[package]
+name = "shiguredo_opus"
+version = "2026.1.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["Shiguredo Inc."]
+license = "Apache-2.0"
+description = "Rust bindings for the Opus audio codec"
+homepage = "https://github.com/shiguredo/opus-rs"
+repository = "https://github.com/shiguredo/opus-rs"
+readme = "README.md"
+build = "build.rs"
+include = ["/src/**/*", "/build.rs", "/README.md", "/LICENSE"]
+
+[features]
+default = ["dred"]
+source-build = []
+dred = []
+
+[dependencies]
+
+[build-dependencies]
+bindgen = "0.72"
+shiguredo_cmake = "4.3"
+shiguredo_toml = "2026.1"
+
+# 以降は外部ライブラリビルド用のメタデータ
+# (この内容は build.rs の中からのみ参照される)
+[package.metadata.external-dependencies.opus]
+version = "1.6.1"
+# origin: https://downloads.xiph.org/releases/opus/
+url = "https://oss-mirrors.shiguredo.jp/"
+sha256 = "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
