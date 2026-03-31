@@ -53,7 +53,7 @@ fn main() {
         // See also: https://docs.rs/about/builds
         fs::write(
             output_bindings_path,
-            "pub struct OpusEncoder; pub struct OpusDecoder;",
+            "pub struct OpusEncoder; pub struct OpusDecoder; pub struct OpusDREDDecoder; pub struct OpusDRED;",
         )
         .expect("write file error");
         return;
