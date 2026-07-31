@@ -23,7 +23,7 @@ sha256 = "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
 
 [build-dependencies]
 bindgen = "0.72"
-shiguredo_cmake = "4.3"
+shiguredo_cmake = "4.4"
 shiguredo_toml = "2026.2"
 
 [features]

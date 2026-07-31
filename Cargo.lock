@@ -218,9 +218,9 @@ checksum = "94300abf3f1ae2e2b8ffb7b58043de3d399c73fa6f4b73826402a5c457614dbe"
 
 [[package]]
 name = "shiguredo_cmake"
-version = "4.3.2"
+version = "4.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3f4829c787c2da91f90152060b9aade0db45fe9425b6f3fd16acf1de887e2ee"
+checksum = "7ebe8d4ddac00dfb93edcd3edc678a743cb61601a8b5431df23d18d37f9c0d63"
 dependencies = [
  "cmake",
  "shiguredo_toml",
