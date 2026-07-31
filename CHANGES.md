@@ -11,6 +11,9 @@
 
 ## develop
 
+- [ADD] Ubuntu 26.04 (x86_64 / arm64) 向けのビルド・CI・prebuilt 対応を追加する
+  - @voluntas
+
 ### misc
 
 ## 2026.1.0
