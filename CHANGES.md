@@ -11,10 +11,19 @@
 
 ## develop
 
+- [CHANGE] MSRV (rust-version) を 1.93 に上げる
+  - @voluntas
 - [ADD] Ubuntu 26.04 (x86_64 / arm64) 向けのビルド・CI・prebuilt 対応を追加する
   - @voluntas
 
 ### misc
+
+- proptest による PBT テストを `pbt/` に追加し、CI と Makefile に実行ターゲットを追加する
+  - @voluntas
+- prek のフック設定に tombi の lint / format を追加し、`cargo test` を pre-push 限定に変更する
+  - @voluntas
+- テスト内の `.unwrap()` を `.expect()` に置き換え、アサーションメッセージを日本語に統一する
+  - @voluntas
 
 ## 2026.1.0
 
