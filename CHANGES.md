@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.2.0
+
+**リリース日**: 2026-08-307
+
 - [CHANGE] MSRV (rust-version) を 1.93 に上げる
   - @voluntas
 - [ADD] Ubuntu 26.04 (x86_64 / arm64) 向けのビルド・CI・prebuilt 対応を追加する
