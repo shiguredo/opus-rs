@@ -1960,26 +1960,37 @@ mod tests {
 
     #[test]
     fn encode_pcm_length_mismatch() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         assert!(encoder.encode(&[0i16; 100]).is_err());
     }
 
     #[test]
     fn encode_decode_roundtrip() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         // エンコーダーの状態を安定させるために数フレーム捨てる
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         assert_eq!(decoded.len(), FRAME_SIZE);
 
@@ -1987,7 +1998,7 @@ mod tests {
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "decoded RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+            "デコード結果の RMS ({output_rms:.1}) が入力の RMS ({input_rms:.1}) と比べて低すぎる"
         );
     }
 
@@ -1999,69 +2010,97 @@ mod tests {
             packet_loss_perc: Some(50),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let packet1 = encoder.encode(&input).unwrap();
-        let packet2 = encoder.encode(&input).unwrap();
+        let packet1 = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let packet2 = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         // packet1 を通常デコードする
-        decoder.decode(&packet1).unwrap();
+        decoder
+            .decode(&packet1)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         // packet2 の FEC で packet1 相当のフレームを復元する
-        let fec_decoded = decoder.decode_fec(&packet2).unwrap();
+        let fec_decoded = decoder
+            .decode_fec(&packet2)
+            .expect("FEC 有効でエンコードしたパケットなので FEC デコードは成功するはず");
         assert_eq!(fec_decoded.len(), FRAME_SIZE);
 
         // FEC 復元結果が無音でないことを確認する
         let fec_rms = rms_i16(&fec_decoded);
         assert!(
             fec_rms > 0.0,
-            "FEC decoded frame should not be silent, got RMS={fec_rms}"
+            "FEC で復元したフレームは無音であってはならない (RMS={fec_rms})"
         );
 
         // packet2 を通常デコードする
-        let decoded2 = decoder.decode(&packet2).unwrap();
+        let decoded2 = decoder
+            .decode(&packet2)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded2);
         assert!(
             output_rms > 0.0,
-            "decoded frame after FEC should not be silent"
+            "FEC 後のデコードフレームは無音であってはならない"
         );
     }
 
     #[test]
     fn decode_plc() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
         // 最後のフレームをデコードしてデコーダーに状態を持たせる
-        let encoded = encoder.encode(&input).unwrap();
-        decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         // PLC で補間フレームを生成する
-        let plc = decoder.decode_plc().unwrap();
+        let plc = decoder
+            .decode_plc()
+            .expect("デコーダーに状態があるので PLC デコードは成功するはず");
         assert_eq!(plc.len(), FRAME_SIZE);
 
         // サイン波入力後の PLC は無音ではないはず
         let plc_rms = rms_i16(&plc);
         assert!(
             plc_rms > 0.0,
-            "PLC frame after sine wave should not be silent, got RMS={plc_rms}"
+            "サイン波入力後の PLC フレームは無音であってはならない (RMS={plc_rms})"
         );
     }
 
@@ -2069,20 +2108,30 @@ mod tests {
 
     #[test]
     fn encode_f32_decode_f32_roundtrip() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_f32();
         let input_rms = rms_f32(&input);
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode_f32(&input).unwrap();
-            decoder.decode_f32(&encoded).unwrap();
+            let encoded = encoder
+                .encode_f32(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_f32(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode_f32(&input).unwrap();
-        let decoded = decoder.decode_f32(&encoded).unwrap();
+        let encoded = encoder
+            .encode_f32(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode_f32(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         assert_eq!(decoded.len(), FRAME_SIZE);
 
@@ -2090,7 +2139,7 @@ mod tests {
         let output_rms = rms_f32(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "decoded RMS ({output_rms:.4}) is too low compared to input RMS ({input_rms:.4})"
+            "デコード結果の RMS ({output_rms:.4}) が入力の RMS ({input_rms:.4}) と比べて低すぎる"
         );
     }
 
@@ -2102,61 +2151,89 @@ mod tests {
             packet_loss_perc: Some(50),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_f32();
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode_f32(&input).unwrap();
-            decoder.decode_f32(&encoded).unwrap();
+            let encoded = encoder
+                .encode_f32(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_f32(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let packet1 = encoder.encode_f32(&input).unwrap();
-        let packet2 = encoder.encode_f32(&input).unwrap();
+        let packet1 = encoder
+            .encode_f32(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let packet2 = encoder
+            .encode_f32(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
-        decoder.decode_f32(&packet1).unwrap();
+        decoder
+            .decode_f32(&packet1)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
-        let fec_decoded = decoder.decode_fec_f32(&packet2).unwrap();
+        let fec_decoded = decoder
+            .decode_fec_f32(&packet2)
+            .expect("FEC 有効でエンコードしたパケットなので FEC デコードは成功するはず");
         assert_eq!(fec_decoded.len(), FRAME_SIZE);
 
         let fec_rms = rms_f32(&fec_decoded);
         assert!(
             fec_rms > 0.0,
-            "FEC decoded f32 frame should not be silent, got RMS={fec_rms}"
+            "FEC で復元した f32 フレームは無音であってはならない (RMS={fec_rms})"
         );
 
-        let decoded2 = decoder.decode_f32(&packet2).unwrap();
+        let decoded2 = decoder
+            .decode_f32(&packet2)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_f32(&decoded2);
         assert!(
             output_rms > 0.0,
-            "decoded f32 frame after FEC should not be silent"
+            "FEC 後のデコード f32 フレームは無音であってはならない"
         );
     }
 
     #[test]
     fn decode_plc_f32() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_f32();
 
         for _ in 0..5 {
-            let encoded = encoder.encode_f32(&input).unwrap();
-            decoder.decode_f32(&encoded).unwrap();
+            let encoded = encoder
+                .encode_f32(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_f32(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode_f32(&input).unwrap();
-        decoder.decode_f32(&encoded).unwrap();
+        let encoded = encoder
+            .encode_f32(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        decoder
+            .decode_f32(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
-        let plc = decoder.decode_plc_f32().unwrap();
+        let plc = decoder
+            .decode_plc_f32()
+            .expect("デコーダーに状態があるので PLC デコードは成功するはず");
         assert_eq!(plc.len(), FRAME_SIZE);
 
         let plc_rms = rms_f32(&plc);
         assert!(
             plc_rms > 0.0,
-            "PLC f32 frame after sine wave should not be silent, got RMS={plc_rms}"
+            "サイン波入力後の PLC f32 フレームは無音であってはならない (RMS={plc_rms})"
         );
     }
 
@@ -2164,20 +2241,30 @@ mod tests {
 
     #[test]
     fn encode_i24_decode_i24_roundtrip() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i24();
         let input_rms = rms_i32(&input);
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode_i24(&input).unwrap();
-            decoder.decode_i24(&encoded).unwrap();
+            let encoded = encoder
+                .encode_i24(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_i24(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode_i24(&input).unwrap();
-        let decoded = decoder.decode_i24(&encoded).unwrap();
+        let encoded = encoder
+            .encode_i24(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode_i24(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         assert_eq!(decoded.len(), FRAME_SIZE);
 
@@ -2185,7 +2272,7 @@ mod tests {
         let output_rms = rms_i32(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "decoded i24 RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+            "デコード結果の i24 RMS ({output_rms:.1}) が入力の RMS ({input_rms:.1}) と比べて低すぎる"
         );
     }
 
@@ -2197,60 +2284,88 @@ mod tests {
             packet_loss_perc: Some(50),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i24();
 
         for _ in 0..5 {
-            let encoded = encoder.encode_i24(&input).unwrap();
-            decoder.decode_i24(&encoded).unwrap();
+            let encoded = encoder
+                .encode_i24(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_i24(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let packet1 = encoder.encode_i24(&input).unwrap();
-        let packet2 = encoder.encode_i24(&input).unwrap();
+        let packet1 = encoder
+            .encode_i24(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let packet2 = encoder
+            .encode_i24(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
-        decoder.decode_i24(&packet1).unwrap();
+        decoder
+            .decode_i24(&packet1)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
-        let fec_decoded = decoder.decode_fec_i24(&packet2).unwrap();
+        let fec_decoded = decoder
+            .decode_fec_i24(&packet2)
+            .expect("FEC 有効でエンコードしたパケットなので FEC デコードは成功するはず");
         assert_eq!(fec_decoded.len(), FRAME_SIZE);
 
         let fec_rms = rms_i32(&fec_decoded);
         assert!(
             fec_rms > 0.0,
-            "FEC decoded i24 frame should not be silent, got RMS={fec_rms}"
+            "FEC で復元した i24 フレームは無音であってはならない (RMS={fec_rms})"
         );
 
-        let decoded2 = decoder.decode_i24(&packet2).unwrap();
+        let decoded2 = decoder
+            .decode_i24(&packet2)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i32(&decoded2);
         assert!(
             output_rms > 0.0,
-            "decoded i24 frame after FEC should not be silent"
+            "FEC 後のデコード i24 フレームは無音であってはならない"
         );
     }
 
     #[test]
     fn decode_plc_i24() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i24();
 
         for _ in 0..5 {
-            let encoded = encoder.encode_i24(&input).unwrap();
-            decoder.decode_i24(&encoded).unwrap();
+            let encoded = encoder
+                .encode_i24(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode_i24(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode_i24(&input).unwrap();
-        decoder.decode_i24(&encoded).unwrap();
+        let encoded = encoder
+            .encode_i24(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        decoder
+            .decode_i24(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
-        let plc = decoder.decode_plc_i24().unwrap();
+        let plc = decoder
+            .decode_plc_i24()
+            .expect("デコーダーに状態があるので PLC デコードは成功するはず");
         assert_eq!(plc.len(), FRAME_SIZE);
 
         let plc_rms = rms_i32(&plc);
         assert!(
             plc_rms > 0.0,
-            "PLC i24 frame after sine wave should not be silent, got RMS={plc_rms}"
+            "サイン波入力後の PLC i24 フレームは無音であってはならない (RMS={plc_rms})"
         );
     }
 
@@ -2258,32 +2373,48 @@ mod tests {
 
     #[test]
     fn decoder_reset() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        decoder.reset().unwrap();
+        decoder
+            .reset()
+            .expect("有効なインスタンスなのでリセットは成功するはず");
 
         // リセット後、再度安定させてからデコード結果を検証する
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "decoded RMS after reset ({output_rms:.1}) is too low"
+            "リセット後のデコード RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2322,20 +2453,30 @@ mod tests {
             gain: None,
         };
 
-        let mut encoder = Encoder::new(enc_config).unwrap();
-        let mut decoder = Decoder::new(dec_config).unwrap();
+        let mut encoder =
+            Encoder::new(enc_config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(dec_config).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16_params(sample_rate, channels, frame_samples);
         let input_rms = rms_i16(&input);
 
         // エンコーダーの状態を安定させる
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
         assert_eq!(
             decoded.len(),
@@ -2346,7 +2487,7 @@ mod tests {
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "sample_rate={sample_rate}, channels={channels}, frame_duration={frame_duration:?}: decoded RMS ({output_rms:.1}) is too low compared to input RMS ({input_rms:.1})"
+            "sample_rate={sample_rate}, channels={channels}, frame_duration={frame_duration:?}: デコード結果の RMS ({output_rms:.1}) が入力の RMS ({input_rms:.1}) と比べて低すぎる"
         );
     }
 
@@ -2414,23 +2555,33 @@ mod tests {
             application: Some(Application::Voip),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "Voip mode: decoded RMS ({output_rms:.1}) is too low"
+            "Voip モード: デコード結果の RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2440,23 +2591,33 @@ mod tests {
             application: Some(Application::LowDelay),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "LowDelay mode: decoded RMS ({output_rms:.1}) is too low"
+            "LowDelay モード: デコード結果の RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2464,24 +2625,34 @@ mod tests {
 
     #[test]
     fn continuous_frames_100() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         // 100 フレーム連続でエンコード/デコードする
         for i in 0..100 {
-            let encoded = encoder.encode(&input).unwrap();
-            let decoded = decoder.decode(&encoded).unwrap();
-            assert_eq!(decoded.len(), FRAME_SIZE, "frame {i}: wrong decoded length");
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            let decoded = decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
+            assert_eq!(
+                decoded.len(),
+                FRAME_SIZE,
+                "frame {i}: デコード結果の長さが正しくない"
+            );
 
             // 最初の 5 フレームはエンコーダーの安定化期間なのでスキップする
             if i >= 5 {
                 let output_rms = rms_i16(&decoded);
                 assert!(
                     output_rms > input_rms * 0.5,
-                    "frame {i}: decoded RMS ({output_rms:.1}) is too low"
+                    "frame {i}: デコード結果の RMS ({output_rms:.1}) が低すぎる"
                 );
             }
         }
@@ -2497,14 +2668,20 @@ mod tests {
             bitrate: Some(500),
             ..EncoderConfig::new(48000, 2)
         };
-        let mut encoder = Encoder::new(enc_config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(enc_config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         for _ in 0..6 {
-            let encoded = encoder.encode(&input).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
             assert!(!encoded.is_empty());
-            decoder.decode(&encoded).unwrap();
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
     }
 
@@ -2514,23 +2691,33 @@ mod tests {
             bitrate: Some(512_000),
             ..EncoderConfig::new(48000, 2)
         };
-        let mut encoder = Encoder::new(enc_config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(enc_config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "max bitrate: decoded RMS ({output_rms:.1}) is too low"
+            "最大ビットレート: デコード結果の RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2540,23 +2727,33 @@ mod tests {
             complexity: Some(0),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(config).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "complexity 0: decoded RMS ({output_rms:.1}) is too low"
+            "complexity 0: デコード結果の RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2564,44 +2761,67 @@ mod tests {
 
     #[test]
     fn encoder_multiple_reset() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         let input = sine_wave_i16();
 
         for _ in 0..5 {
-            encoder.encode(&input).unwrap();
-            encoder.reset().unwrap();
+            encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            encoder
+                .reset()
+                .expect("有効なインスタンスなのでリセットは成功するはず");
         }
 
         // 最後のリセット後もエンコードできる
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
         assert!(!encoded.is_empty());
     }
 
     #[test]
     fn decoder_multiple_reset() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
         let input = sine_wave_i16();
         let input_rms = rms_i16(&input);
 
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
-            decoder.reset().unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
+            decoder
+                .reset()
+                .expect("有効なインスタンスなのでリセットは成功するはず");
         }
 
         // 最後のリセット後に安定させてからデコード結果を検証する
         for _ in 0..5 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
-        let encoded = encoder.encode(&input).unwrap();
-        let decoded = decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let decoded = decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
         let output_rms = rms_i16(&decoded);
         assert!(
             output_rms > input_rms * 0.5,
-            "decoded RMS after multiple resets ({output_rms:.1}) is too low"
+            "複数回のリセット後のデコード RMS ({output_rms:.1}) が低すぎる"
         );
     }
 
@@ -2609,7 +2829,8 @@ mod tests {
 
     #[test]
     fn decode_corrupted_packet() {
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
         // ランダムなバイト列をデコードしてもパニックしない
         let corrupted = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0xFF, 0x42, 0x13];
         // エラーでも Ok でもパニックしなければよい
@@ -2618,11 +2839,15 @@ mod tests {
 
     #[test]
     fn decode_truncated_packet() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         let input = sine_wave_i16();
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         // パケットを途中で切り詰めてデコードする
         let truncated = &encoded[..encoded.len() / 2];
@@ -2632,7 +2857,8 @@ mod tests {
 
     #[test]
     fn decode_single_byte_packet() {
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
         // 1 バイトのパケットをデコードしてもパニックしない
         let _ = decoder.decode(&[0x00]);
     }
@@ -2655,7 +2881,7 @@ mod tests {
 
     #[test]
     fn error_reason() {
-        let e = Error::check(sys::OPUS_BAD_ARG, "test").expect_err("not an error");
+        let e = Error::check(sys::OPUS_BAD_ARG, "test").expect_err("エラーになるはず");
         assert!(e.reason().is_some());
     }
 
@@ -2667,8 +2893,11 @@ mod tests {
 
     #[test]
     fn encoder_get_lookahead() {
-        let encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let lookahead = encoder.get_lookahead().unwrap();
+        let encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let lookahead = encoder
+            .get_lookahead()
+            .expect("有効なインスタンスなので CTL の取得は成功するはず");
         // Opus のルックアヘッドは通常 0 より大きい
         assert!(lookahead > 0);
     }
@@ -2677,50 +2906,65 @@ mod tests {
 
     #[test]
     fn packet_info_from_encoded() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         let input = sine_wave_i16();
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         // 帯域幅を取得する
-        let bw = packet_get_bandwidth(&encoded).unwrap();
+        let bw = packet_get_bandwidth(&encoded)
+            .expect("エンコード済みのパケットなので帯域幅の取得は成功するはず");
         // 48kHz エンコードなので Fullband か Superwideband のはず
         assert!(
             bw == Bandwidth::Fullband || bw == Bandwidth::Superwideband,
-            "unexpected bandwidth: {bw:?}"
+            "想定外の帯域幅: {bw:?}"
         );
 
         // チャンネル数を取得する
-        let channels = packet_get_nb_channels(&encoded).unwrap();
+        let channels = packet_get_nb_channels(&encoded)
+            .expect("エンコード済みのパケットなのでチャンネル数の取得は成功するはず");
         assert!(
             channels == 1 || channels == 2,
-            "unexpected channels: {channels}"
+            "想定外のチャンネル数: {channels}"
         );
 
         // フレーム数を取得する
-        let nb_frames = packet_get_nb_frames(&encoded).unwrap();
-        assert!(nb_frames >= 1, "expected at least 1 frame, got {nb_frames}");
-
-        // サンプル数を取得する
-        let samples_per_frame = packet_get_samples_per_frame(&encoded, TEST_SAMPLE_RATE).unwrap();
+        let nb_frames = packet_get_nb_frames(&encoded)
+            .expect("エンコード済みのパケットなのでフレーム数の取得は成功するはず");
         assert!(
-            samples_per_frame > 0,
-            "expected positive samples_per_frame, got {samples_per_frame}"
+            nb_frames >= 1,
+            "少なくとも 1 フレームあるはず (実際: {nb_frames})"
         );
 
-        let nb_samples = packet_get_nb_samples(&encoded, TEST_SAMPLE_RATE).unwrap();
+        // サンプル数を取得する
+        let samples_per_frame = packet_get_samples_per_frame(&encoded, TEST_SAMPLE_RATE)
+            .expect("エンコード済みのパケットなのでフレームサンプル数の取得は成功するはず");
+        assert!(
+            samples_per_frame > 0,
+            "samples_per_frame は正の値のはず (実際: {samples_per_frame})"
+        );
+
+        let nb_samples = packet_get_nb_samples(&encoded, TEST_SAMPLE_RATE)
+            .expect("エンコード済みのパケットなので総サンプル数の取得は成功するはず");
         assert_eq!(nb_samples, samples_per_frame * nb_frames);
     }
 
     #[test]
     fn packet_samples_per_frame_all_rates() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         let input = sine_wave_i16();
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         // 全サンプルレートで samples_per_frame を取得できる
         for &rate in &[8000u32, 12000, 16000, 24000, 48000] {
-            let spf = packet_get_samples_per_frame(&encoded, rate).unwrap();
-            assert!(spf > 0, "rate={rate}: expected positive samples_per_frame");
+            let spf = packet_get_samples_per_frame(&encoded, rate)
+                .expect("エンコード済みのパケットなのでフレームサンプル数の取得は成功するはず");
+            assert!(spf > 0, "rate={rate}: samples_per_frame は正の値のはず");
         }
     }
 
@@ -2741,7 +2985,8 @@ mod tests {
             Bandwidth::Fullband,
         ] {
             let opus_value = bw.to_opus();
-            let converted = Bandwidth::from_opus(opus_value).unwrap();
+            let converted =
+                Bandwidth::from_opus(opus_value).expect("既知の帯域幅定数なので変換は成功するはず");
             assert_eq!(bw, converted);
         }
 
@@ -2761,66 +3006,122 @@ mod tests {
             dtx: Some(true),
             ..EncoderConfig::new(48000, 2)
         };
-        let encoder = Encoder::new(config).unwrap();
+        let encoder =
+            Encoder::new(config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
 
-        assert_eq!(encoder.get_bitrate().unwrap(), 96_000);
-        assert_eq!(encoder.get_complexity().unwrap(), 5);
-        assert!(!encoder.get_vbr().unwrap());
-        assert_eq!(encoder.get_inband_fec().unwrap(), InbandFec::Enabled);
-        assert!(encoder.get_dtx().unwrap());
-        assert_eq!(encoder.get_sample_rate().unwrap(), 48000);
+        assert_eq!(
+            encoder
+                .get_bitrate()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            96_000
+        );
+        assert_eq!(
+            encoder
+                .get_complexity()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            5
+        );
+        assert!(
+            !encoder
+                .get_vbr()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず")
+        );
+        assert_eq!(
+            encoder
+                .get_inband_fec()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            InbandFec::Enabled
+        );
+        assert!(
+            encoder
+                .get_dtx()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず")
+        );
+        assert_eq!(
+            encoder
+                .get_sample_rate()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            48000
+        );
     }
 
     #[test]
     fn encoder_get_bandwidth_after_encode() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         let input = sine_wave_i16();
 
         // エンコード後に帯域幅を取得できる
-        encoder.encode(&input).unwrap();
-        let bw = encoder.get_bandwidth().unwrap();
+        encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        let bw = encoder
+            .get_bandwidth()
+            .expect("有効なインスタンスなので CTL の取得は成功するはず");
         assert!(
             bw == Bandwidth::Fullband
                 || bw == Bandwidth::Superwideband
                 || bw == Bandwidth::Wideband,
-            "unexpected bandwidth: {bw:?}"
+            "想定外の帯域幅: {bw:?}"
         );
     }
 
     #[test]
     fn decoder_get_ctls() {
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
         let config = DecoderConfig {
             gain: Some(256),
             ..decoder_config()
         };
-        let mut decoder = Decoder::new(config).unwrap();
+        let mut decoder =
+            Decoder::new(config).expect("有効な設定なのでデコーダーの生成は成功するはず");
 
         // ゲインの確認
-        assert_eq!(decoder.get_gain().unwrap(), 256);
+        assert_eq!(
+            decoder
+                .get_gain()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            256
+        );
 
         // デコード前は last_packet_duration は 0
-        assert_eq!(decoder.get_last_packet_duration().unwrap(), 0);
+        assert_eq!(
+            decoder
+                .get_last_packet_duration()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            0
+        );
 
         // デコード後の状態を確認する
         let input = sine_wave_i16();
-        let encoded = encoder.encode(&input).unwrap();
-        decoder.decode(&encoded).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
+        decoder
+            .decode(&encoded)
+            .expect("エンコード済みのパケットなのでデコードは成功するはず");
 
-        let duration = decoder.get_last_packet_duration().unwrap();
+        let duration = decoder
+            .get_last_packet_duration()
+            .expect("有効なインスタンスなので CTL の取得は成功するはず");
         assert_eq!(duration, FRAME_SAMPLES);
 
-        let bw = decoder.get_bandwidth().unwrap();
+        let bw = decoder
+            .get_bandwidth()
+            .expect("有効なインスタンスなので CTL の取得は成功するはず");
         assert!(
             bw == Bandwidth::Fullband
                 || bw == Bandwidth::Superwideband
                 || bw == Bandwidth::Wideband,
-            "unexpected bandwidth: {bw:?}"
+            "想定外の帯域幅: {bw:?}"
         );
 
         // ピッチは 0 以上 (利用不可の場合は 0)
-        let pitch = decoder.get_pitch().unwrap();
-        assert!(pitch >= 0, "unexpected pitch: {pitch}");
+        let pitch = decoder
+            .get_pitch()
+            .expect("有効なインスタンスなので CTL の取得は成功するはず");
+        assert!(pitch >= 0, "想定外のピッチ: {pitch}");
     }
 
     // --- DRED テスト ---
@@ -2833,32 +3134,47 @@ mod tests {
             dred_duration: Some(10),
             ..encoder_config(Some(64_000))
         };
-        let mut encoder = Encoder::new(enc_config).unwrap();
-        assert_eq!(encoder.get_dred_duration().unwrap(), 10);
+        let mut encoder =
+            Encoder::new(enc_config).expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        assert_eq!(
+            encoder
+                .get_dred_duration()
+                .expect("有効なインスタンスなので CTL の取得は成功するはず"),
+            10
+        );
 
-        let mut decoder = Decoder::new(decoder_config()).unwrap();
-        let mut dred_decoder = DredDecoder::new().unwrap();
-        let mut dred = Dred::new().unwrap();
+        let mut decoder =
+            Decoder::new(decoder_config()).expect("有効な設定なのでデコーダーの生成は成功するはず");
+        let mut dred_decoder = DredDecoder::new().expect("DRED デコーダーの生成は成功するはず");
+        let mut dred = Dred::new().expect("DRED 状態の生成は成功するはず");
 
         let input = sine_wave_i16();
 
         // エンコーダーの状態を安定させる
         for _ in 0..10 {
-            let encoded = encoder.encode(&input).unwrap();
-            decoder.decode(&encoded).unwrap();
+            let encoded = encoder
+                .encode(&input)
+                .expect("有効な PCM 入力なのでエンコードは成功するはず");
+            decoder
+                .decode(&encoded)
+                .expect("エンコード済みのパケットなのでデコードは成功するはず");
         }
 
         // DRED 付きパケットをエンコードする
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         // DRED をパースする
         let offset = dred_decoder
             .parse(&mut dred, &encoded, 48000, 48000)
-            .unwrap();
+            .expect("エンコード済みのパケットなので DRED パケットのパースは成功するはず");
 
         // DRED が含まれていればデコードする
         if offset > 0 {
-            let decoded = decoder.dred_decode(&dred, offset).unwrap();
+            let decoded = decoder
+                .dred_decode(&dred, offset)
+                .expect("DRED 付きパケットなので DRED デコードは成功するはず");
             assert!(!decoded.is_empty());
         }
     }
@@ -2867,16 +3183,19 @@ mod tests {
     #[test]
     fn dred_disabled_parse() {
         // DRED 無効のパケットをパースしても 0 が返る (エラーにならない)
-        let mut encoder = Encoder::new(encoder_config(Some(64_000))).unwrap();
-        let mut dred_decoder = DredDecoder::new().unwrap();
-        let mut dred = Dred::new().unwrap();
+        let mut encoder = Encoder::new(encoder_config(Some(64_000)))
+            .expect("有効な設定なのでエンコーダーの生成は成功するはず");
+        let mut dred_decoder = DredDecoder::new().expect("DRED デコーダーの生成は成功するはず");
+        let mut dred = Dred::new().expect("DRED 状態の生成は成功するはず");
 
         let input = sine_wave_i16();
-        let encoded = encoder.encode(&input).unwrap();
+        let encoded = encoder
+            .encode(&input)
+            .expect("有効な PCM 入力なのでエンコードは成功するはず");
 
         let offset = dred_decoder
             .parse(&mut dred, &encoded, 48000, 48000)
-            .unwrap();
-        assert_eq!(offset, 0, "DRED should not be present in non-DRED packet");
+            .expect("エンコード済みのパケットなので DRED パケットのパースは成功するはず");
+        assert_eq!(offset, 0, "DRED 無効のパケットに DRED が含まれている");
     }
 }
