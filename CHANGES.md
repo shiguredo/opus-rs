@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.2.0
+
+**リリース日**: 2026-08-07
+
 - [CHANGE] MSRV (rust-version) を 1.93 に上げる
   - @voluntas
 - [ADD] Ubuntu 26.04 (x86_64 / arm64) 向けのビルド・CI・prebuilt 対応を追加する
@@ -23,6 +27,12 @@
 - prek のフック設定に tombi の lint / format を追加し、`cargo test` を pre-push 限定に変更する
   - @voluntas
 - テスト内の `.unwrap()` を `.expect()` に置き換え、アサーションメッセージを日本語に統一する
+  - @voluntas
+- 依存と GitHub Actions を更新する (shiguredo_cmake を 4.4 に、actions/checkout を v7.0.1 に、crates-io-auth-action を v1.0.5 に更新する)
+  - @voluntas
+- GitHub Actions の外部アクションをコミット SHA で固定する
+  - @voluntas
+- fuzz の依存ライブラリに用途コメントを追加する
   - @voluntas
 
 ## 2026.1.0
