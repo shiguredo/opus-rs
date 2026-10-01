@@ -1,7 +1,7 @@
 # iOS / Android 向けの prebuilt を追加する
 
 - Created: 2026-10-01
-- Completed: {YYYY-MM-DD}
+- Completed: 2026-10-01
 - Branch: feature/add-mobile-prebuilt
 - Polished: 2026-10-01
 
@@ -16,8 +16,8 @@
 iOS の実機とシミュレーターの区別、Android の ABI の選択、モバイル向けの SDK 設定が必要になる。
 また、`rewrite_symbols` は Mach-O のシンボル先頭の `_` を macOS の場合だけ処理している。
 
-本 issue は、`feature/add-mobile-prebuilt` 上で実装とローカル検証を進めた後に起票する。
-現時点の変更は未コミットで、GitHub Actions 上の実行とリリース公開は行っていない。
+本 issue は、`feature/add-mobile-prebuilt` 上で実装とローカル検証を進めた後に起票した。
+起票時点の変更は未コミットで、GitHub Actions 上の実行とリリース公開は行っていなかった。
 
 ## 設計方針
 
@@ -33,7 +33,7 @@ iOS の実機とシミュレーターの区別、Android の ABI の選択、モ
 | Android x86 | `i686-linux-android` | `android_x86` |
 | Android x86_64 | `x86_64-linux-android` | `android_x86_64` |
 
-- iOS の prebuilt は 13.0 以降、Android は API level 21 以降を対象とする
+- iOS の prebuilt は実機と x86_64 シミュレーターが 13.0 以降、arm64 シミュレーターが 14.0 以降、Android は API level 21 以降を対象とする
 - Android のビルドには NDK `28.2.13676358` を使用する
 - DRED を有効にし、シンボル書き換え済みの静的ライブラリと対象ターゲット用の `bindings.rs` を配布する
 - アーカイブには Opus の `COPYING` を同梱し、SHA256 チェックサムを添付する
@@ -64,17 +64,23 @@ iOS の実機とシミュレーターの区別、Android の ABI の選択、モ
 
 ## 解決方法
 
-未コミットの変更では、Rust のターゲットからモバイル向けの成果物を選択し、iOS の実機とシミュレーターを区別する処理を追加した。
+Rust のターゲットからモバイル向けの成果物を選択し、iOS の実機とシミュレーターを区別する処理を追加した。
 Mach-O のシンボル書き換えは Apple プラットフォームを判定するように変更した。
 
 ソースビルドでは、iOS の Xcode SDK と Android NDK のツールチェーンを明示し、bindgen にも同じ SDK とターゲットを指定する。
-NDK の C / C++ コンパイラを CMake に渡すため、既存の推移的依存である `cc` をビルド依存として明示した。
+cmake クレートのコンパイラ判定に NDK の C / C++ コンパイラを指定するため、既存の推移的依存である `cc` をビルド依存として明示した。
+Android の API level は数値または `android-<数値>` を受け入れ、CMake と bindgen の設定が食い違わないように 21 未満を拒否する。
 
 armeabi-v7a では、Opus 1.6.1 の DRED と NEON の実行時選択を組み合わせると `DNN_COMPUTE_LINEAR_IMPL` が未定義になることを確認した。
 NDK の既定設定に合わせて `OPUS_PRESUME_NEON=ON` を指定し、NEON 対応 CPU を対象とする。
 
 `.github/workflows/mobile.yml` を CI とリリースで共用し、ソースビルド、Rust のリンク、シンボル検証、アーカイブ生成を行う。
+CI でも生成したアーカイブの SHA256 を検証して展開し、リンク済みのライブラリ、生成したバインディング、ライセンスとの一致を確認する。
+リリース時には Cargo のパッケージバージョンとタグの一致も検証する。
 リリースから呼び出した場合はアップロード後の prebuilt も検証し、成功を `publish` の前提とする。
+
+push 前の確認で、既存の prek の `system` フックが `&&` を Cargo の引数として渡す不具合が見つかった。
+ユーザーの承認に基づき、単体テストと PBT を別々のフックに分け、priority と fail_fast により実行順序と失敗時の停止を維持した。
 
 ### ローカル検証結果
 
@@ -83,5 +89,11 @@ NDK の既定設定に合わせて `OPUS_PRESUME_NEON=ON` を指定し、NEON �
 - macOS の単体テスト 50 件と PBT 5 件が通過した
 - `cargo fmt --all --check`、Clippy、`git diff --check` が通過した
 - actionlint は、既存の Ubuntu 26.04 の runner ラベルを一時設定で補って通過した
+- prek の設定検証、pre-commit と pre-push の両ステージが通過した
+- Android API level 19 を指定した実ビルドが、API level 21 以上を要求するエラーで停止することを確認した
 
-モバイルの実機やエミュレーターでのテスト実行、GitHub Actions 上の CI、公開したリリース成果物の取得は未検証である。
+差分レビューを 2 回、各 3 周実施し、アーカイブ検証と arm64 シミュレーターの最小 OS バージョンの重要な指摘 2 件を修正した。
+最後のレビューで致命的・重要な指摘は 0 件となり、残った改善 3 件も反映した。
+
+GitHub Actions の CI はこの作業ブランチの PR で実行し、全ジョブの通過後にマージする。
+モバイルの実機やエミュレーターでのテスト実行と公開したリリース成果物の取得は、本変更では実施していない。
