@@ -87,13 +87,24 @@ pass_filenames = false
 priority = 10
 
 # cargo test: コミットを遅くしないため pre-push でだけ実行する
-# pbt は独立ワークスペースのため、manifest-path を指定して実行する
 [[repos.hooks]]
 id = "cargo-test"
 name = "cargo test"
-entry = "cargo test --workspace --features source-build && cargo test --manifest-path pbt/Cargo.toml"
+entry = "cargo test --workspace --features source-build"
 language = "system"
 types = ["rust"]
 pass_filenames = false
 stages = ["pre-push"]
 priority = 20
+
+# pbt は独立ワークスペースのため、manifest-path を指定して実行する。
+# 単体テストが通過してから PBT を実行するため、priority を分ける。
+[[repos.hooks]]
+id = "cargo-test-pbt"
+name = "cargo test (PBT)"
+entry = "cargo test --manifest-path pbt/Cargo.toml"
+language = "system"
+types = ["rust"]
+pass_filenames = false
+stages = ["pre-push"]
+priority = 21
