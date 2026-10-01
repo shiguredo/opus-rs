@@ -85,6 +85,12 @@ jobs:
           fi
           echo "All symbols correctly prefixed with shiguredo_opus_"
 
+  mobile:
+    name: Mobile prebuilt
+    permissions:
+      contents: read
+    uses: ./.github/workflows/mobile.yml
+
   # docs.rs 向けビルド確認
   docs-rs:
     name: docs.rs
@@ -100,6 +106,7 @@ jobs:
   slack_notify:
     needs:
       - ci
+      - mobile
       - docs-rs
     runs-on: ubuntu-slim
     if: always()

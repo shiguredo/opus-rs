@@ -11,6 +11,9 @@
 
 ## develop
 
+- [ADD] iOS 実機 / シミュレーターおよび Android の 4 ABI 向けのビルド、CI、prebuilt 対応を追加する
+  - @voluntas
+
 ### misc
 
 - [FIX] pre-push フックで単体テストと PBT を順に実行するように修正する
