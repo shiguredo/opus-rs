@@ -231,6 +231,7 @@ name = "shiguredo_opus"
 version = "2026.2.0"
 dependencies = [
  "bindgen",
+ "cc",
  "shiguredo_cmake",
  "shiguredo_toml",
 ]

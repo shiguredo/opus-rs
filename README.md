@@ -19,7 +19,8 @@ Please read <https://github.com/shiguredo/oss> before use.
 
 [xiph/opus](https://github.com/xiph/opus) を利用した Opus エンコーダーおよびデコーダーの Rust バインディングです。
 
-ビルド時に Opus ライブラリのソースコードを取得し、CMake でスタティックライブラリとしてビルドします。
+デフォルトでは GitHub Release から prebuilt の静的ライブラリと FFI バインディングを取得します。
+`source-build` feature を指定すると、Opus のソースコードを取得して CMake でビルドします。
 
 ## 特徴
 
@@ -39,6 +40,69 @@ Please read <https://github.com/shiguredo/oss> before use.
 ```bash
 cargo build
 ```
+
+### iOS / Android 向け prebuilt
+
+Cargo のターゲットに応じて、以下のアーカイブを自動選択します。
+各アーカイブにはシンボル書き換え済みの `lib/libopus.a`、`bindings.rs`、Opus のライセンスを収録し、SHA256 チェックサムを添付します。
+DRED も含まれます。
+
+| 対象 | Rust ターゲット | アーカイブ名 |
+| --- | --- | --- |
+| iOS 実機 arm64 | `aarch64-apple-ios` | `libopus-ios_arm64.tar.gz` |
+| iOS シミュレーター arm64 | `aarch64-apple-ios-sim` | `libopus-ios-sim_arm64.tar.gz` |
+| iOS シミュレーター x86_64 | `x86_64-apple-ios` | `libopus-ios-sim_x86_64.tar.gz` |
+| Android arm64-v8a | `aarch64-linux-android` | `libopus-android_arm64.tar.gz` |
+| Android armeabi-v7a | `armv7-linux-androideabi` | `libopus-android_armv7.tar.gz` |
+| Android x86 | `i686-linux-android` | `libopus-android_x86.tar.gz` |
+| Android x86_64 | `x86_64-linux-android` | `libopus-android_x86_64.tar.gz` |
+
+prebuilt の対象は iOS 13.0 以降、Android API level 21 以降です。
+arm64 の iOS シミュレーターは iOS 14.0 以降を対象とします。
+Android の armeabi-v7a 向け成果物は、NDK の既定設定に合わせて NEON 対応 CPU を対象とします。
+モバイル向けの成果物は、対応を追加したバージョンの GitHub Release から提供します。
+
+```bash
+rustup target add aarch64-apple-ios
+IPHONEOS_DEPLOYMENT_TARGET=13.0 cargo build --target aarch64-apple-ios
+```
+
+アプリケーションのリンクには、iOS では Xcode と各ターゲットの下限以上の `IPHONEOS_DEPLOYMENT_TARGET` 設定、Android では Android NDK と対象 ABI のリンカー設定が必要です。
+[iOS の Rust ターゲット](https://doc.rust-lang.org/rustc/platform-support/apple-ios.html) と [Android NDK の CMake ガイド](https://developer.android.com/ndk/guides/cmake) も参照してください。
+
+### ソースからのビルド
+
+ホスト向けの libclang と rustup の `llvm-tools` コンポーネントが必要です。
+
+```bash
+rustup component add llvm-tools
+cargo build --features source-build
+```
+
+iOS では、Xcode の SDK を使って実機とシミュレーターをビルドします。
+最小バージョンは `IPHONEOS_DEPLOYMENT_TARGET` で指定できます。
+未指定の場合は arm64 シミュレーターが `14.0`、実機と x86_64 シミュレーターが `13.0` です。
+
+```bash
+IPHONEOS_DEPLOYMENT_TARGET=13.0 cargo build --target aarch64-apple-ios --features source-build
+IPHONEOS_DEPLOYMENT_TARGET=14.0 cargo build --target aarch64-apple-ios-sim --features source-build
+```
+
+Android では、`ANDROID_NDK_HOME` に NDK のディレクトリを指定します。
+`ANDROID_PLATFORM` で最小 API level を数値または `android-<数値>` の形式で指定でき、未指定の場合は `21` です。
+指定できる API level は `21` 以降です。
+以下は Linux ホストでの arm64-v8a 向けの例です。
+
+```bash
+export ANDROID_NDK_HOME=/path/to/android-ndk
+export ANDROID_PLATFORM=21
+export CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+rustup target add aarch64-linux-android
+cargo build --target aarch64-linux-android --features source-build
+```
+
+リリース用の Android prebuilt は NDK `28.2.13676358` でビルドします。
+CI では、すべてのモバイルターゲットでソースビルド、シンボル書き換え、Rust のリンク、アーカイブ生成を検証します。
 
 ## 使い方
 
