@@ -37,19 +37,9 @@ jobs:
             os: macos-15
           - target: android_arm64
             rust-target: aarch64-linux-android
-            ndk-target: aarch64-linux-android
-            os: ubuntu-24.04
-          - target: android_armv7
-            rust-target: armv7-linux-androideabi
-            ndk-target: armv7a-linux-androideabi
-            os: ubuntu-24.04
-          - target: android_x86
-            rust-target: i686-linux-android
-            ndk-target: i686-linux-android
             os: ubuntu-24.04
           - target: android_x86_64
             rust-target: x86_64-linux-android
-            ndk-target: x86_64-linux-android
             os: ubuntu-24.04
     env:
       PREBUILT_TARGET: ${{ matrix.target }}
@@ -79,8 +69,6 @@ jobs:
 
       - name: Set up Android NDK
         if: startsWith(matrix.target, 'android_')
-        env:
-          NDK_TARGET: ${{ matrix.ndk-target }}
         run: |
           ndk_dir="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
           if [ ! -d "$ndk_dir" ]; then
@@ -88,7 +76,7 @@ jobs:
           fi
           echo "ANDROID_NDK_HOME=$ndk_dir" >> "$GITHUB_ENV"
           target_key=$(echo "$RUST_TARGET" | tr '[:lower:]-' '[:upper:]_')
-          echo "CARGO_TARGET_${target_key}_LINKER=$ndk_dir/toolchains/llvm/prebuilt/linux-x86_64/bin/${NDK_TARGET}${ANDROID_PLATFORM}-clang" >> "$GITHUB_ENV"
+          echo "CARGO_TARGET_${target_key}_LINKER=$ndk_dir/toolchains/llvm/prebuilt/linux-x86_64/bin/${RUST_TARGET}${ANDROID_PLATFORM}-clang" >> "$GITHUB_ENV"
 
       # rlib だけでは C シンボルのリンクを検証できないため、テスト実行ファイルを生成する。
       # 実行には実機またはエミュレーターが必要なので、ここではリンクまで検証する。

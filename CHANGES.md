@@ -11,6 +11,9 @@
 
 ## develop
 
+- [CHANGE] Android の対応 ABI を arm64-v8a と x86_64 に限定する
+  - @voluntas
+
 ## 2026.3.0
 
 **リリース日**: 2026-10-02
