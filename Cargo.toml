@@ -1,6 +1,6 @@
 [package]
 name = "shiguredo_opus"
-version = "2026.2.0"
+version = "2026.3.0"
 edition = "2024"
 rust-version = "1.93"
 description = "Rust bindings for the Opus audio codec"
@@ -24,6 +24,8 @@ sha256 = "6ffcb593207be92584df15b32466ed64bbec99109f007c82205f0194572411a1"
 [build-dependencies]
 # bindgen: Opus の C ヘッダーから FFI バインディングを生成する
 bindgen = "0.72"
+# cc: cmake クレートのコンパイラ判定に Android NDK の C / C++ コンパイラを指定する
+cc = "1.4"
 # shiguredo_cmake: 外部ライブラリ (libopus) の CMake ビルドとシンボル書き換えを行う
 shiguredo_cmake = "4.4"
 # shiguredo_toml: Cargo.toml のメタデータ (外部ライブラリの取得情報) を読み取る
