@@ -340,8 +340,6 @@ fn configure_mobile_build(config: &mut shiguredo_cmake::Config) -> Vec<String> {
             );
             let (abi, clang_target) = match target.as_str() {
                 "aarch64-linux-android" => ("arm64-v8a", "aarch64-linux-android"),
-                "armv7-linux-androideabi" => ("armeabi-v7a", "armv7a-linux-androideabi"),
-                "i686-linux-android" => ("x86", "i686-linux-android"),
                 "x86_64-linux-android" => ("x86_64", "x86_64-linux-android"),
                 _ => panic!("unsupported Android target: {target}"),
             };
@@ -387,14 +385,6 @@ fn configure_mobile_build(config: &mut shiguredo_cmake::Config) -> Vec<String> {
                 .define("ANDROID_ABI", abi)
                 .define("ANDROID_PLATFORM", api_level.to_string())
                 .define("ANDROID_STL", "none");
-
-            if target == "armv7-linux-androideabi" {
-                // NDK の ARMv7 は既定で NEON を有効にする。
-                // 根拠: Android NDK ガイドの Arm Neon。既定値は将来変更される可能性がある。
-                // Opus 1.6.1 の arm_dnn_map.c は DOTPROD なしの実行時選択テーブルを
-                // 定義しないため、DRED のリンクを成立させるには NEON を前提にする。
-                config.define("OPUS_PRESUME_NEON", "ON");
-            }
 
             vec![
                 format!("--target={clang_target}{api_level}"),
@@ -759,8 +749,6 @@ fn get_target_platform() -> String {
             "aarch64-apple-ios-sim" => "ios-sim_arm64",
             "x86_64-apple-ios" => "ios-sim_x86_64",
             "aarch64-linux-android" => "android_arm64",
-            "armv7-linux-androideabi" => "android_armv7",
-            "i686-linux-android" => "android_x86",
             "x86_64-linux-android" => "android_x86_64",
             _ => panic!("unsupported mobile target: {rust_target}"),
         }

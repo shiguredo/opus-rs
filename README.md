@@ -53,13 +53,10 @@ DRED も含まれます。
 | iOS シミュレーター arm64 | `aarch64-apple-ios-sim` | `libopus-ios-sim_arm64.tar.gz` |
 | iOS シミュレーター x86_64 | `x86_64-apple-ios` | `libopus-ios-sim_x86_64.tar.gz` |
 | Android arm64-v8a | `aarch64-linux-android` | `libopus-android_arm64.tar.gz` |
-| Android armeabi-v7a | `armv7-linux-androideabi` | `libopus-android_armv7.tar.gz` |
-| Android x86 | `i686-linux-android` | `libopus-android_x86.tar.gz` |
 | Android x86_64 | `x86_64-linux-android` | `libopus-android_x86_64.tar.gz` |
 
 prebuilt の対象は iOS 13.0 以降、Android API level 21 以降です。
 arm64 の iOS シミュレーターは iOS 14.0 以降を対象とします。
-Android の armeabi-v7a 向け成果物は、NDK の既定設定に合わせて NEON 対応 CPU を対象とします。
 モバイル向けの成果物は、対応を追加したバージョンの GitHub Release から提供します。
 
 ```bash
