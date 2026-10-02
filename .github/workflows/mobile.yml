@@ -59,19 +59,6 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # シンボル検証で利用する rg は runner image に含まれるとは限らない。
-      - name: Set up ripgrep
-        run: |
-          if ! command -v rg > /dev/null; then
-            if [ "$RUNNER_OS" = "macOS" ]; then
-              brew install ripgrep
-            else
-              sudo apt-get update
-              sudo apt-get install --yes --no-install-recommends ripgrep
-            fi
-          fi
-          rg --version
-
       - name: Set up Rust target
         run: |
           rustup update stable
@@ -133,8 +120,8 @@ jobs:
 
           # Mach-O の先頭 _ とアーカイブ内のファイル名を除いて、全外部シンボルを検証する。
           "$llvm_nm" --defined-only --extern-only --format=just-symbols "$lib_path" > symbols.txt
-          symbols=$(sed 's/^_//' symbols.txt | rg '^[a-zA-Z_][a-zA-Z0-9_]*$')
-          if echo "$symbols" | rg -v '^shiguredo_opus_'; then
+          symbols=$(sed 's/^_//' symbols.txt | grep -E '^[a-zA-Z_][a-zA-Z0-9_]*$')
+          if echo "$symbols" | grep -v '^shiguredo_opus_'; then
             echo "::error::symbols without shiguredo_opus_ prefix found"
             exit 1
           fi
