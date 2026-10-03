@@ -51,7 +51,8 @@ jobs:
 
       - name: Set up Rust target
         run: |
-          rustup update stable
+          # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
+          rustup show
           rustup target add "$RUST_TARGET"
 
       # build.rs の取得先とアップロード先が同じリリースであることを保証する。

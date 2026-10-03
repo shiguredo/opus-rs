@@ -61,12 +61,16 @@ jobs:
           - target: macos_arm64
             os: macos-15
           - target: windows_x86_64
-            os: windows-2025
+            os: windows-2025-vs2026
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
+      - name: Set up Rust toolchain
+        run: rustup show
 
       - name: Build with source-build
         run: cargo build --release --features source-build

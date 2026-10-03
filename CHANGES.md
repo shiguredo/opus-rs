@@ -14,6 +14,11 @@
 - [CHANGE] Android の対応 ABI を arm64-v8a と x86_64 に限定する
   - @voluntas
 
+### misc
+
+- rust-toolchain.toml の channel を MSRV (1.93) に固定し、CI のツールチェーンも 1.93 に揃える
+  - @voluntas
+
 ## 2026.3.0
 
 **リリース日**: 2026-10-02
