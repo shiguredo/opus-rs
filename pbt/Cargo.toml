@@ -2,13 +2,14 @@
 name = "pbt"
 version = "0.0.0"
 edition = "2024"
+rust-version = "1.93"
 publish = false
 
 [workspace]
 members = ["."]
 
 [dev-dependencies]
-# proptest: PBT (Property-Based Testing) フレームワーク
-proptest = "1"
+# noprop: PBT (Property-Based Testing) のフレームワーク
+noprop = "0.2"
 # テスト対象のクレート。ローカルでも CI でも確実に検証できるようソースからビルドする
 shiguredo_opus = { path = "..", features = ["source-build"] }

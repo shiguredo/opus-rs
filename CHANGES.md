@@ -18,6 +18,8 @@
 
 - rust-toolchain.toml の channel を MSRV (1.93) に固定し、CI のツールチェーンも 1.93 に揃える
   - @voluntas
+- PBT のフレームワークを proptest から noprop に移行する
+  - @voluntas
 
 ## 2026.3.0
 
