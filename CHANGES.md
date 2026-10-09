@@ -24,6 +24,8 @@
   - @voluntas
 - release で prebuilt 経路のリンクを検証し、タグと Cargo.toml のバージョン一致も確認する
   - @voluntas
+- 依存ライブラリを更新する (bindgen を 0.73 に、Cargo.lock の依存を最新にする)
+  - @voluntas
 
 ## 2026.3.0
 

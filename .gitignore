@@ -1,5 +1,6 @@
 target/
 fuzz/target/
+fuzz/Cargo.lock
 pbt/target/
 # prebuilt 経路の検証 (release workflow の Verify released prebuilt) が使うビルドディレクトリ
 target-prebuilt/
