@@ -11,6 +11,10 @@
 
 ## develop
 
+## 2026.4.0
+
+**リリース日**: 2026-10-09
+
 - [CHANGE] Android の対応 ABI を arm64-v8a と x86_64 に限定する
   - @voluntas
 - [FIX] Windows の prebuilt でライブラリ名が libopus.a に固定されていてビルドに失敗するのを修正する
@@ -23,8 +27,6 @@
 - PBT のフレームワークを proptest から noprop に移行する
   - @voluntas
 - release で prebuilt 経路のリンクを検証し、タグと Cargo.toml のバージョン一致も確認する
-  - @voluntas
-- 依存ライブラリを更新する (bindgen を 0.73 に、Cargo.lock の依存を最新にする)
   - @voluntas
 
 ## 2026.3.0
