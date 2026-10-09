@@ -61,12 +61,31 @@ jobs:
           - target: macos_arm64
             os: macos-15
           - target: windows_x86_64
-            os: windows-2025
+            os: windows-2025-vs2026
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - name: Checkout sources
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # rust-toolchain.toml に固定した MSRV のツールチェーンを導入する
+      - name: Set up Rust toolchain
+        run: rustup show
+
+      # prebuilt のダウンロード先は Cargo.toml の version から決まるため、
+      # タグ由来の release と一致していることを検証する
+      # Windows runner の既定シェルは PowerShell のため、bash を明示する
+      - name: Verify release version
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.github-release.outputs.version }}
+        run: |
+          package_version=$(cargo metadata --locked --no-deps --format-version=1 \
+            | jq -r '.packages[] | select(.name == "shiguredo_opus") | .version')
+          if [ "$RELEASE_VERSION" != "$package_version" ]; then
+            echo "::error::release version does not match Cargo package version"
+            exit 1
+          fi
 
       - name: Build with source-build
         run: cargo build --release --features source-build
@@ -98,6 +117,10 @@ jobs:
             libopus-${{ matrix.target }}.tar.gz \
             libopus-${{ matrix.target }}.tar.gz.sha256 \
             --clobber
+
+      # アップロード済みの成果物を build.rs が自動選択し、リンクできることも確認する
+      - name: Verify released prebuilt
+        run: cargo test --locked --target-dir target-prebuilt
 
   build-mobile-prebuilt:
     name: Build mobile prebuilt

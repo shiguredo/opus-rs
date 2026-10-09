@@ -3,6 +3,9 @@
 //! [xiph/opus](https://github.com/xiph/opus) の Rust バインディング。
 //! PCM 音声データのエンコード / デコードを行う。
 //!
+//! リンクする静的ライブラリはビルド時に自動選択する。既定ではビルド対象に応じた
+//! prebuilt を取得し、`source-build` feature を有効にするとソースからビルドする。
+//!
 //! [Opus]: https://github.com/xiph/opus
 #![warn(missing_docs)]
 
