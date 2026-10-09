@@ -13,12 +13,16 @@
 
 - [CHANGE] Android の対応 ABI を arm64-v8a と x86_64 に限定する
   - @voluntas
+- [FIX] Windows の prebuilt でライブラリ名が libopus.a に固定されていてビルドに失敗するのを修正する
+  - @voluntas
 
 ### misc
 
 - rust-toolchain.toml の channel を MSRV (1.93) に固定し、CI のツールチェーンも 1.93 に揃える
   - @voluntas
 - PBT のフレームワークを proptest から noprop に移行する
+  - @voluntas
+- release で prebuilt 経路のリンクを検証し、タグと Cargo.toml のバージョン一致も確認する
   - @voluntas
 
 ## 2026.3.0
