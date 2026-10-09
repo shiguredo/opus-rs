@@ -1,6 +1,8 @@
 target/
 fuzz/target/
 pbt/target/
+# prebuilt 経路の検証 (release workflow の Verify released prebuilt) が使うビルドディレクトリ
+target-prebuilt/
 *.mp4
 
 # Agents
