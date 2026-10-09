@@ -137,13 +137,18 @@ fn download_prebuilt(out_dir: &Path) -> PathBuf {
     }
 
     // ライブラリファイルを OUT_DIR/lib/ にコピー
+    //
+    // ライブラリ名は Unix 系では libopus.a、Windows では opus.lib になる。
+    // rustc-link-lib=static=opus は Windows では opus.lib を探すため、名前は変えずにコピーする
     let lib_dir = out_dir.join("lib");
     fs::create_dir_all(&lib_dir).expect("failed to create lib directory");
-    fs::copy(
-        prebuilt_dir.join("lib").join("libopus.a"),
-        lib_dir.join("libopus.a"),
-    )
-    .expect("failed to copy libopus.a");
+    let lib_src = find_static_library(&prebuilt_dir.join("lib"));
+    let lib_dst = lib_dir.join(
+        lib_src
+            .file_name()
+            .expect("static library file name must be set"),
+    );
+    fs::copy(&lib_src, &lib_dst).expect("failed to copy opus static library");
 
     // bindings.rs を OUT_DIR/ にコピーする
     //
